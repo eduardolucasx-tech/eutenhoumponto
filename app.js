@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
+const APP_VERSION = 'v1.2.3';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -490,8 +491,7 @@ function goHome(){
 
 function goProfile(){
   if(!state.profile) return;
-  tab='config';
-  document.querySelectorAll('.bottom-nav button').forEach(x=>x.classList.toggle('active', x.dataset.tab==='config'));
+  tab = 'config';
   render();
 }
 
@@ -499,15 +499,32 @@ function render(){
   document.querySelectorAll('.bottom-nav button').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === tab);
   });
-  document.getElementById('modelBadge').textContent = state.profile ? model().title : 'Versão 1.1.1';
+
+  const badge = document.getElementById('modelBadge');
+  if(badge){
+    badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
+  }
+
   renderHeaderProfile();
-  document.getElementById('bottomNav').classList.toggle('hidden', !state.profile);
-  if(!state.user) return renderLogin();
+
+  const bottomNav = document.getElementById('bottomNav');
+  if(bottomNav){
+    bottomNav.classList.toggle('hidden', !state.profile);
+  }
+
   if(!state.user) return renderLogin();
   if(!state.profile) return renderModelChoice();
-  const map = {home:renderHome, register:renderRegister, month:renderMonth, config:renderConfig};
+
+  const map = {
+    home: renderHome,
+    register: renderRegister,
+    month: renderMonth,
+    config: renderConfig
+  };
+
   (map[tab] || renderHome)();
 }
+
 function renderLogin(){
   screenEl.innerHTML = `<section class="card login-wrap"><div style="width:100%;text-align:center"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para carregar seu perfil e manter o app pronto para a versão em nuvem.</p><button class="google" id="googleLogin">Entrar com Google</button>${!hasRealFirebaseConfig() ? '<p class="muted" style="margin-top:12px">Configure o arquivo firebase-config.js antes de publicar o login real.</p>' : ''}</div></section>`;
   googleLogin.onclick = loginWithGoogle;
@@ -854,6 +871,7 @@ function renderConfig(){
       <div>
         <h2 style="margin:0">Perfil e Configurações</h2>
         <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
+        <p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p>
       </div>
     </div>
 
@@ -884,7 +902,9 @@ function renderConfig(){
   </section>`;
 
   const drawScale = () => {
-    scaleWrap.innerHTML = cfgModel.value === 'tribuna_jornalismo'
+    const wrap = document.getElementById('scaleWrap');
+    if(!wrap) return;
+    wrap.innerHTML = cfgModel.value === 'tribuna_jornalismo'
       ? `<label>Data inicial da escala 12x2</label><input id="cfgScale" class="input" type="date" value="${state.profile.scaleStartDate || iso(nowSP())}">`
       : '';
   };
@@ -906,7 +926,8 @@ function renderConfig(){
     state.profile.city = cfgCity.value;
     state.profile.bankStart = parseSignedTime(cfgBank.value);
     if(cfgModel.value === 'tribuna_jornalismo'){
-      state.profile.scaleStartDate = document.getElementById('cfgScale').value;
+      const scaleInput = document.getElementById('cfgScale');
+      if(scaleInput) state.profile.scaleStartDate = scaleInput.value;
     }
     save();
   };
@@ -924,8 +945,8 @@ function renderConfig(){
   };
 }
 
-
 document.getElementById('profileBtn').onclick = goProfile;
+
 document.getElementById('homeBrand').onclick = () => {
   if(state.profile){
     tab = 'home';

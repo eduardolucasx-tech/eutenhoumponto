@@ -1,3 +1,37 @@
+Eu tenho um ponto. — Release v1.2.3
+
+Build atual: v1.2.3
+Nome e logo mantidos.
+Firebase Config: eutenhoumponto-ce487
+Google Auth: integrado
+Firestore Sync: integrado
+
+
+================================================================================
+ATUALIZAÇÃO v1.2.3 — Fix Perfil + versão visível
+================================================================================
+
+Data da build: 2026-05-05
+
+Correções:
+- Corrigida novamente a navegação da aba Perfil.
+- Botão Perfil da barra inferior força tab = 'config' e renderiza Perfil e Configurações.
+- Clique na foto/avatar também abre Perfil.
+- Clique no logo 1. continua voltando para Início / Bater ponto.
+- Botões garantidos na aba Perfil:
+  - Sincronizar agora
+  - Desconectar conta Google
+
+Versão visível:
+- O topo do app agora mostra a versão junto do modelo:
+  Ex.: v1.2.3 · TRIBUNA HUB/PROG
+- A tela Perfil também mostra: Versão v1.2.3
+
+Observação:
+- Em atualização no celular/PWA, se a versão antiga continuar aparecendo,
+  remova o app da tela inicial ou limpe o cache do site antes de testar.
+
+
 Eu tenho um ponto. — Release v1.1.1
 
 Base: v3.3 refinada

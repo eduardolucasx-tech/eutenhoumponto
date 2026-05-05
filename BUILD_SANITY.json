@@ -1,0 +1,8 @@
+{
+  "has_render_config": true,
+  "has_syncNow": true,
+  "has_disconnect": true,
+  "has_goProfile": true,
+  "has_version": true,
+  "bottom_nav_config": true
+}
