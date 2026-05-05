@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.3';
+const APP_VERSION = 'v1.3.4';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -687,6 +687,9 @@ function goHome(){
 function goProfile(){
   if(!state.profile) return;
   tab = 'config';
+  document.querySelectorAll('.bottom-nav button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.tab === 'config' || button.dataset.tab === 'profile');
+  });
   renderProfileScreen();
 }
 
@@ -694,7 +697,8 @@ function render(){
   try{
     const currentTab = tab || 'home';
     document.querySelectorAll('.bottom-nav button').forEach((button) => {
-      button.classList.toggle('active', button.dataset.tab === currentTab || (button.dataset.tab === 'config' && currentTab === 'profile'));
+      const btnTab = button.dataset.tab;
+      button.classList.toggle('active', btnTab === currentTab || ((btnTab === 'config' || btnTab === 'profile') && (currentTab === 'config' || currentTab === 'profile')));
     });
     const badge = document.getElementById('modelBadge');
     if(badge) badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
@@ -1031,32 +1035,43 @@ function renderRegister(){
     bindSelectedFile(document.getElementById('proofImage'), document.getElementById('proofImageSelected'), document.getElementById('proofImageName'));
     bindSelectedFile(document.getElementById('pdfEspelho'), document.getElementById('pdfEspelhoSelected'), document.getElementById('pdfEspelhoName'));
 
-    parseText.onclick = () => {
-      const text = rawImport.value;
+    const parseTextBtn = document.getElementById('parseText');
+    const rawImportEl = document.getElementById('rawImport');
+    const foundBoxEl = document.getElementById('foundBox');
+    const espelhoBoxEl = document.getElementById('espelhoBox');
+    const parseEspelhoTextBtnEl = document.getElementById('parseEspelhoTextBtn');
+    const readPdfEspelhoBtn = document.getElementById('readPdfEspelho');
+    const rawEspelhoEl = document.getElementById('rawEspelho');
+    const pdfEspelhoEl = document.getElementById('pdfEspelho');
+
+    if(parseTextBtn) parseTextBtn.onclick = () => {
+      const text = rawImportEl?.value || '';
       const m1 = text.match(/DATA[:\s]*(\d{2}\/\d{2}\/\d{4})[\s\S]*?HORA[:\s]*(\d{2}:\d{2})/i) || text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})/);
-      if(!m1){ foundBox.className='card'; foundBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
+      if(!m1){ foundBoxEl.className='card'; foundBoxEl.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
       const [dd,mm,yyyy] = m1[1].split('/'); const foundDate = `${yyyy}-${mm}-${dd}`; const foundTime = m1[2];
       const targetDate = targetDateForImportedPunch(foundDate, foundTime);
       const extra = targetDate !== foundDate ? `<div class="row"><span>Salvar em</span><b>${brDate(targetDate)}</b></div><p class="muted">Marcação de madrugada vinculada à jornada aberta do dia anterior.</p>` : '';
-      foundBox.className='card'; foundBox.innerHTML = `<h2>Marcação encontrada</h2><div class="row"><span>Data do comprovante</span><b>${brDate(foundDate)}</b></div><div class="row"><span>Hora</span><b>${foundTime}</b></div>${extra}<button class="primary full" id="confirmImport">Adicionar marcação</button>`;
-      confirmImport.onclick = () => { addPunch(targetDate,foundTime,'import_text'); tab='home'; render(); };
+      foundBoxEl.className='card'; foundBoxEl.innerHTML = `<h2>Marcação encontrada</h2><div class="row"><span>Data do comprovante</span><b>${brDate(foundDate)}</b></div><div class="row"><span>Hora</span><b>${foundTime}</b></div>${extra}<button class="primary full" id="confirmImport">Adicionar marcação</button>`;
+      const confirmImportBtn = document.getElementById('confirmImport');
+      if(confirmImportBtn) confirmImportBtn.onclick = () => { addPunch(targetDate,foundTime,'import_text'); tab='home'; render(); };
     };
     const handleParsedEspelho = (parsed) => {
-      if(!parsed.rows.length){ espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não encontrei linhas diárias no padrão do espelho.</p>'; return; }
-      espelhoBox.className='card'; espelhoBox.innerHTML = previewEspelhoImport(parsed);
-      confirmPdfImport.onclick = () => { applyEspelhoImport(parsed); showToast('Espelho importado com sucesso.', 'ok'); tab='month'; render(); };
+      if(!parsed.rows.length){ espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não encontrei linhas diárias no padrão do espelho.</p>'; return; }
+      espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML = previewEspelhoImport(parsed);
+      const confirmPdfImportBtn = document.getElementById('confirmPdfImport');
+      if(confirmPdfImportBtn) confirmPdfImportBtn.onclick = () => { applyEspelhoImport(parsed); showToast('Espelho importado com sucesso.', 'ok'); tab='month'; render(); };
     };
-    parseEspelhoTextBtn.onclick = () => handleParsedEspelho(parseEspelhoPontoText(rawEspelho.value));
-    readPdfEspelho.onclick = async () => {
-      const file = pdfEspelho.files?.[0];
-      if(!file){ espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Selecione um PDF</h2><p class="muted">Escolha o arquivo do espelho de ponto.</p>'; return; }
-      espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Lendo PDF</h2><p class="muted">Aguarde...</p>';
+    if(parseEspelhoTextBtnEl) parseEspelhoTextBtnEl.onclick = () => handleParsedEspelho(parseEspelhoPontoText(rawEspelhoEl?.value || ''));
+    if(readPdfEspelhoBtn) readPdfEspelhoBtn.onclick = async () => {
+      const file = pdfEspelhoEl?.files?.[0];
+      if(!file){ espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML='<h2>Selecione um PDF</h2><p class="muted">Escolha o arquivo do espelho de ponto.</p>'; return; }
+      espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML='<h2>Lendo PDF</h2><p class="muted">Aguarde...</p>';
       try{
         const text = await extractPdfText(file);
-        rawEspelho.value = text;
+        if(rawEspelhoEl) rawEspelhoEl.value = text;
         handleParsedEspelho(parseEspelhoPontoText(text));
       }catch(e){
-        espelhoBox.className='card'; espelhoBox.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${e.message}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
+        espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${e.message}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
       }
     };
   };
@@ -1112,7 +1127,7 @@ function renderImport(){
   parseText.onclick = () => {
     const text = rawImport.value;
     const m1 = text.match(/DATA[:\s]*(\d{2}\/\d{2}\/\d{4})[\s\S]*?HORA[:\s]*(\d{2}:\d{2})/i) || text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})/);
-    if(!m1){ foundBox.className='card'; foundBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
+    if(!m1){ foundBoxEl.className='card'; foundBoxEl.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
     const [dd,mm,yyyy] = m1[1].split('/'); const date = `${yyyy}-${mm}-${dd}`; const time = m1[2];
     const targetDate = targetDateForImportedPunch(date, time);
     const extra = targetDate !== date ? `<div class="row"><span>Salvar em</span><b>${brDate(targetDate)}</b></div><p class="muted">Marcação de madrugada vinculada à jornada aberta do dia anterior.</p>` : '';
@@ -1189,35 +1204,44 @@ function renderConfig(){
 }
 
 
-document.getElementById('profileBtn').onclick = goProfile;
-document.getElementById('homeBrand').onclick = () => {
-  if(state.profile){ tab = 'home'; render(); }
-};
-document.querySelectorAll('.bottom-nav button').forEach((button) => {
-  button.onclick = () => {
-    const nextTab = button.dataset.tab;
-    if(nextTab === 'config' || nextTab === 'profile'){ goProfile(); return; }
-    tab = nextTab;
-    render();
+
+const profileTopButton = document.getElementById('profileBtn');
+if(profileTopButton){
+  profileTopButton.onclick = goProfile;
+}
+
+const homeBrandButton = document.getElementById('homeBrand');
+if(homeBrandButton){
+  homeBrandButton.onclick = () => {
+    if(state.profile){
+      tab = 'home';
+      render();
+    }
   };
-});
+}
+
+function bindBottomNav(){
+  document.querySelectorAll('.bottom-nav button').forEach((button) => {
+    button.onclick = (event) => {
+      event.preventDefault();
+      const nextTab = button.dataset.tab;
+      if(nextTab === 'config' || nextTab === 'profile'){
+        goProfile();
+        return;
+      }
+      tab = nextTab;
+      render();
+    };
+  });
+}
+bindBottomNav();
+
 setInterval(() => {
   if(state.profile && tab === 'home'){
     const el = document.getElementById('clockNow');
     if(el) el.textContent = hm(nowSP());
   }
 }, 1000);
-document.addEventListener('visibilitychange', () => {
-  if(!document.hidden && state.user?.uid && firebaseReady){
-    hydrateFromCloud('cloud').then(ok => { if(ok) render(); });
-  }
-});
-
-window.addEventListener('focus', () => {
-  if(state.user?.uid && firebaseReady){
-    hydrateFromCloud('cloud').then(ok => { if(ok) render(); });
-  }
-});
 
 initFirebaseAuth()
   .catch((err) => console.warn("Firebase init falhou:", err))

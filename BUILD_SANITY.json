@@ -1,8 +1,8 @@
 {
   "version": true,
-  "pullStateFromCloud": true,
-  "pullButton": true,
-  "pullHandler": true,
-  "visibilitySync": true,
-  "focusSync": true
+  "bottomNavDirect": true,
+  "parseTextSafe": true,
+  "rawImportSafe": true,
+  "confirmImportSafe": true,
+  "pdfSafe": true
 }

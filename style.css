@@ -441,3 +441,13 @@ textarea {
   background: currentColor;
   box-shadow: 0 0 12px currentColor;
 }
+
+
+/* v1.3.4 — Hotfix navegação/handlers */
+.bottom-nav button {
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav button span {
+  pointer-events: none;
+}

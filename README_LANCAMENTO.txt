@@ -1,3 +1,32 @@
+Eu tenho um ponto. — Release v1.3.4
+
+Build atual: v1.3.4
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.4 — Hotfix Perfil e Importar
+================================================================================
+
+Correções:
+- Botão Perfil da barra inferior agora chama goProfile() diretamente.
+- Estado ativo da barra inferior corrigido para config/profile.
+- Botões da aba Importar não dependem mais de IDs globais do navegador.
+- Corrigido fluxo de:
+  - Ler DATA e HORA
+  - Adicionar marcação importada
+  - Ler texto do espelho
+  - Ler PDF do espelho
+  - Confirmar importação do espelho
+- Ajuste de clique/touch na barra inferior.
+
+Validação:
+1. Tocar no botão Perfil da barra inferior.
+2. Ir em Registrar > Importar.
+3. Colar texto com DATA e HORA.
+4. Tocar em Ler DATA e HORA.
+5. Confirmar a marcação.
+
+
 Eu tenho um ponto. — Release v1.3.3
 
 Build atual: v1.3.3

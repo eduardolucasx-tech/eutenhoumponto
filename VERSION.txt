@@ -1,2 +1,2 @@
-v1.3.3
-Build: Sincronização multidispositivo
+v1.3.4
+Build: Hotfix Perfil e Importar
