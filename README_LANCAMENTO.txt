@@ -1,3 +1,34 @@
+Eu tenho um ponto. — Release v1.3.3
+
+Build atual: v1.3.3
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.3 — Sincronização multidispositivo
+================================================================================
+
+Problema identificado:
+- Entrar na mesma conta Google em Safari e desktop ainda podia não mostrar as batidas,
+  porque o app estava local-first e não forçava leitura da nuvem ao alternar dispositivo.
+
+Correções aplicadas:
+- Reforçada a leitura da nuvem ao entrar com Google.
+- Leitura da nuvem ao voltar para o app/aba ganhar foco.
+- Novo botão no Perfil: Baixar da nuvem.
+- Botão antigo foi renomeado para Enviar para a nuvem.
+- Merge mais inteligente:
+  - se o navegador local estiver vazio, a nuvem ganha;
+  - se houver dados locais, o app mescla sem apagar batidas.
+- Status da Home passa a mostrar horário da última sincronização quando disponível.
+
+Como validar:
+1. No celular, bata ponto e use Perfil > Enviar para a nuvem.
+2. No desktop, entre com a mesma conta Google.
+3. Use Perfil > Baixar da nuvem.
+4. As batidas devem aparecer.
+5. Abra o Firestore e confirme users/{uid}/profile/main com campo days preenchido.
+
+
 Eu tenho um ponto. — Release v1.3.2
 
 Build atual: v1.3.2

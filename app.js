@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.2';
+const APP_VERSION = 'v1.3.3';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -60,6 +60,7 @@ var firestoreFns = null;
 var cloudReady = false;
 var cloudHydrating = false;
 var cloudSyncTimer = null;
+var cloudLastSyncAt = null;
 
 function hasRealFirebaseConfig(){
   const cfg = window.FIREBASE_CONFIG || {};
@@ -91,7 +92,7 @@ async function initFirebaseAuth(){
           provider: "firebase_google"
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        await hydrateFromCloud();
+        await hydrateFromCloud('smart');
         render();
       } else {
         cloudReady = false;
@@ -120,25 +121,50 @@ async function cloudDocRef(){
   return firestoreFns.doc(firebaseDb, "users", state.user.uid, "profile", "main");
 }
 
-function mergeCloudWithLocal(cloud){
-  const local = stateForCloud();
-  return {
-    profile: local.profile || cloud.profile || null,
-    days: { ...(cloud.days || {}), ...(local.days || {}) },
-    imports: Array.isArray(local.imports) && local.imports.length ? local.imports : (cloud.imports || []),
-    officialBank: { ...(cloud.officialBank || {}), ...(local.officialBank || {}) }
-  };
+function countDayEntries(days){
+  return Object.values(days || {}).filter(d => d && ((d.punches && d.punches.length) || d.note || d.closed || d.official)).length;
 }
 
-async function hydrateFromCloud(){
-  if(!firebaseDb || !firestoreFns || !state.user?.uid) return;
+function mergeCloudWithLocal(cloud, mode='smart'){
+  const local = stateForCloud();
+  const cloudDays = cloud.days || {};
+  const localDays = local.days || {};
+
+  const localCount = countDayEntries(localDays);
+  const cloudCount = countDayEntries(cloudDays);
+
+  // Em outro navegador/celular, normalmente o local vem vazio.
+  // Nesse caso, a nuvem precisa ganhar sem briga.
+  const profile =
+    mode === 'cloud' ? (cloud.profile || local.profile) :
+    mode === 'local' ? (local.profile || cloud.profile) :
+    (local.profile || cloud.profile || null);
+
+  const days =
+    mode === 'cloud' ? { ...localDays, ...cloudDays } :
+    mode === 'local' ? { ...cloudDays, ...localDays } :
+    (localCount === 0 && cloudCount > 0 ? { ...cloudDays } : { ...cloudDays, ...localDays });
+
+  const imports =
+    mode === 'cloud' ? (cloud.imports || local.imports || []) :
+    (Array.isArray(local.imports) && local.imports.length ? local.imports : (cloud.imports || []));
+
+  const officialBank =
+    mode === 'cloud' ? { ...(local.officialBank || {}), ...(cloud.officialBank || {}) } :
+    { ...(cloud.officialBank || {}), ...(local.officialBank || {}) };
+
+  return { profile, days, imports, officialBank };
+}
+
+async function hydrateFromCloud(mode='smart'){
+  if(!firebaseDb || !firestoreFns || !state.user?.uid) return false;
   cloudHydrating = true;
   try{
     const ref = await cloudDocRef();
     const snap = await firestoreFns.getDoc(ref);
     if(snap.exists()){
-      const merged = mergeCloudWithLocal(snap.data() || {});
-      state.profile = merged.profile;
+      const merged = mergeCloudWithLocal(snap.data() || {}, mode);
+      state.profile = merged.profile || state.profile;
       state.days = merged.days || {};
       state.imports = merged.imports || [];
       state.officialBank = merged.officialBank || {};
@@ -146,20 +172,23 @@ async function hydrateFromCloud(){
     }
     await pushStateToCloud(true);
     cloudReady = true;
+    cloudLastSyncAt = new Date();
+    return true;
   }catch(err){
     console.warn("Falha ao carregar/salvar dados na nuvem:", err);
     cloudReady = false;
+    return false;
   }finally{
     cloudHydrating = false;
   }
 }
 
 async function pushStateToCloud(immediate=false){
-  if(cloudHydrating || !firebaseDb || !firestoreFns || !state.user?.uid) return;
+  if(cloudHydrating || !firebaseDb || !firestoreFns || !state.user?.uid) return false;
   const doPush = async () => {
     try{
       const ref = await cloudDocRef();
-      if(!ref) return;
+      if(!ref) return false;
       await firestoreFns.setDoc(ref, {
         ...stateForCloud(),
         userMeta: {
@@ -170,15 +199,30 @@ async function pushStateToCloud(immediate=false){
         updatedAt: firestoreFns.serverTimestamp()
       }, { merge: true });
       cloudReady = true;
+      cloudLastSyncAt = new Date();
+      return true;
     }catch(err){
       console.warn("Falha ao sincronizar com Firestore:", err);
       cloudReady = false;
+      return false;
     }
   };
 
   if(immediate) return doPush();
   clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(doPush, 700);
+  return true;
+}
+
+async function pullStateFromCloud(){
+  const ok = await hydrateFromCloud('cloud');
+  if(ok){
+    showToast('Dados baixados da nuvem.', 'ok');
+    render();
+  } else {
+    showToast('Não foi possível baixar da nuvem.', 'warn');
+  }
+  return ok;
 }
 
 async function loginWithGoogle(){
@@ -248,6 +292,7 @@ function showToast(message, type='info'){
 }
 function syncStatusLabel(){
   if(!state.user) return 'Sem conta conectada';
+  if(cloudReady && cloudLastSyncAt) return `Sincronizado às ${hm(cloudLastSyncAt)}`;
   return cloudReady ? 'Sincronizado com a nuvem' : 'Salvando localmente';
 }
 function syncStatusClass(){
@@ -1081,7 +1126,7 @@ function renderProfileScreen(){
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
   screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div><button class="secondary full" id="syncNow">Sincronizar agora</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div><button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Baixar da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
   <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
   <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Use o reset apenas se quiser limpar completamente os dados salvos neste navegador.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
 
@@ -1121,9 +1166,13 @@ function renderProfileScreen(){
   };
 
   document.getElementById('syncNow').onclick = async () => {
-    await pushStateToCloud(true);
-    showToast(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização.', cloudReady ? 'ok' : 'warn');
+    const ok = await pushStateToCloud(true);
+    showToast(ok ? 'Dados enviados para a nuvem.' : 'Não foi possível confirmar o envio.', ok ? 'ok' : 'warn');
     renderProfileScreen();
+  };
+
+  document.getElementById('pullCloud').onclick = async () => {
+    await pullStateFromCloud();
   };
 
   document.getElementById('disconnectGoogle').onclick = () => {
@@ -1158,6 +1207,18 @@ setInterval(() => {
     if(el) el.textContent = hm(nowSP());
   }
 }, 1000);
+document.addEventListener('visibilitychange', () => {
+  if(!document.hidden && state.user?.uid && firebaseReady){
+    hydrateFromCloud('cloud').then(ok => { if(ok) render(); });
+  }
+});
+
+window.addEventListener('focus', () => {
+  if(state.user?.uid && firebaseReady){
+    hydrateFromCloud('cloud').then(ok => { if(ok) render(); });
+  }
+});
+
 initFirebaseAuth()
   .catch((err) => console.warn("Firebase init falhou:", err))
   .finally(() => render());

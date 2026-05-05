@@ -1,7 +1,8 @@
 {
   "version": true,
-  "registerView": true,
-  "toast": true,
-  "noHomeDuplicatePhoto": true,
-  "monthReordered": true
+  "pullStateFromCloud": true,
+  "pullButton": true,
+  "pullHandler": true,
+  "visibilitySync": true,
+  "focusSync": true
 }

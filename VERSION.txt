@@ -1,2 +1,2 @@
-v1.3.2
-Build: Polimento visual e de fluxo
+v1.3.3
+Build: Sincronização multidispositivo
