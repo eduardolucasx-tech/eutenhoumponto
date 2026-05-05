@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.4';
+const APP_VERSION = 'v1.3.5';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1018,9 +1018,10 @@ function renderRegister(){
     const body = document.getElementById('registerBody');
     body.innerHTML = `
     <section class="card"><h2>Importar comprovante</h2><p class="muted">Cole o texto do e-mail, comprovante digital ou papel. O app procura DATA e HORA e adiciona a marcação ao dia correto.</p><label>Texto do comprovante</label><textarea id="rawImport" rows="5" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted">A leitura de imagem/OCR será ligada na versão Firebase com processamento em nuvem.</p></section>
+    <section class="card hidden" id="foundBox"></section>
     <section class="card"><h2>Importar espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna. Ele importa as batidas e usa o bloco oficial Banco de Horas como referência principal do saldo.</p><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou cole o texto extraído do PDF</label><textarea id="rawEspelho" rows="6" placeholder="Cole aqui o texto do espelho mensal, se o leitor de PDF não carregar."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>
-    <section class="card subtle-card"><div class="empty-state compact"><strong>Importação inteligente</strong><span>Comprovantes adicionam batidas individuais. O espelho oficial também atualiza a referência do banco de horas do mês.</span></div></section>
-    <section class="card hidden" id="foundBox"></section><section class="card hidden" id="espelhoBox"></section>`;
+    <section class="card hidden" id="espelhoBox"></section>
+    <section class="card subtle-card"><div class="empty-state compact"><strong>Importação inteligente</strong><span>Comprovantes adicionam batidas individuais. O espelho oficial também atualiza a referência do banco de horas do mês.</span></div></section>`;
 
     const bindSelectedFile = (inputEl, boxEl, nameEl) => {
       if(!inputEl || !boxEl || !nameEl) return;
@@ -1051,13 +1052,15 @@ function renderRegister(){
       const [dd,mm,yyyy] = m1[1].split('/'); const foundDate = `${yyyy}-${mm}-${dd}`; const foundTime = m1[2];
       const targetDate = targetDateForImportedPunch(foundDate, foundTime);
       const extra = targetDate !== foundDate ? `<div class="row"><span>Salvar em</span><b>${brDate(targetDate)}</b></div><p class="muted">Marcação de madrugada vinculada à jornada aberta do dia anterior.</p>` : '';
-      foundBoxEl.className='card'; foundBoxEl.innerHTML = `<h2>Marcação encontrada</h2><div class="row"><span>Data do comprovante</span><b>${brDate(foundDate)}</b></div><div class="row"><span>Hora</span><b>${foundTime}</b></div>${extra}<button class="primary full" id="confirmImport">Adicionar marcação</button>`;
+      foundBoxEl.className='card result-card'; foundBoxEl.innerHTML = `<h2>Marcação encontrada</h2><div class="row"><span>Data do comprovante</span><b>${brDate(foundDate)}</b></div><div class="row"><span>Hora</span><b>${foundTime}</b></div>${extra}<button class="primary full" id="confirmImport">Adicionar marcação</button>`;
+      foundBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
       const confirmImportBtn = document.getElementById('confirmImport');
       if(confirmImportBtn) confirmImportBtn.onclick = () => { addPunch(targetDate,foundTime,'import_text'); tab='home'; render(); };
     };
     const handleParsedEspelho = (parsed) => {
       if(!parsed.rows.length){ espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não encontrei linhas diárias no padrão do espelho.</p>'; return; }
-      espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML = previewEspelhoImport(parsed);
+      espelhoBoxEl.className='card result-card'; espelhoBoxEl.innerHTML = previewEspelhoImport(parsed);
+      espelhoBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
       const confirmPdfImportBtn = document.getElementById('confirmPdfImport');
       if(confirmPdfImportBtn) confirmPdfImportBtn.onclick = () => { applyEspelhoImport(parsed); showToast('Espelho importado com sucesso.', 'ok'); tab='month'; render(); };
     };
