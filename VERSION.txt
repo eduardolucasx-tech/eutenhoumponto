@@ -1,2 +1,2 @@
-v1.2.6
-Build: Fix cloudReady / Perfil
+v1.2.7
+Build: Safe Render

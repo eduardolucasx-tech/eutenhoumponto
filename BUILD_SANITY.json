@@ -1,7 +1,7 @@
 {
   "version": true,
-  "cloudReady_var": true,
-  "renderProfileScreen": true,
-  "push_fallback": true,
-  "no_export_token": true
+  "renderFallback": true,
+  "render_try": true,
+  "renderLogin": true,
+  "renderModelChoice": true
 }

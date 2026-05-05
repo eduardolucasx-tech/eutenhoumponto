@@ -1,5 +1,32 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.2.6';
+const APP_VERSION = 'v1.2.7';
+
+
+
+window.addEventListener('error', (event) => {
+  console.error('Erro global capturado:', event.error || event.message);
+  const screen = document.getElementById('screen');
+  if(screen && !screen.innerHTML.trim()){
+    screen.innerHTML = `<section class="card"><h2>Erro ao carregar</h2><p class="muted">O app encontrou um erro antes de desenhar a tela.</p><p class="muted">${String(event.message || '')}</p><button class="primary full" onclick="localStorage.clear(); location.reload()">Resetar e recarregar</button></section>`;
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Promessa rejeitada:', event.reason);
+});
+
+function renderFallback(message='Não consegui carregar esta tela.'){
+  screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${message}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
+  const btn = document.getElementById('fallbackReset');
+  if(btn){
+    btn.onclick = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      state = load();
+      tab = 'home';
+      render();
+    };
+  }
+}
 
 var firebaseReady = false;
 var firebaseAuth = null;
@@ -509,47 +536,71 @@ function goProfile(){
 }
 
 function render(){
-  const currentTab = tab || 'home';
+  try{
+    const currentTab = tab || 'home';
 
-  document.querySelectorAll('.bottom-nav button').forEach((button) => {
-    const btnTab = button.dataset.tab;
-    button.classList.toggle('active', btnTab === currentTab || (btnTab === 'config' && currentTab === 'profile'));
-  });
+    document.querySelectorAll('.bottom-nav button').forEach((button) => {
+      button.classList.toggle('active', button.dataset.tab === currentTab);
+    });
 
-  const badge = document.getElementById('modelBadge');
-  if(badge){
-    badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
+    const badge = document.getElementById('modelBadge');
+    if(badge){
+      badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
+    }
+
+    renderHeaderProfile();
+
+    const bottomNav = document.getElementById('bottomNav');
+    if(bottomNav){
+      bottomNav.classList.toggle('hidden', !state.profile);
+    }
+
+    if(!state.user) return renderLogin();
+    if(!state.profile) return renderModelChoice();
+
+    if(currentTab === 'config' || currentTab === 'profile') return renderProfileScreen();
+    if(currentTab === 'register') return renderRegister();
+    if(currentTab === 'month') return renderMonth();
+
+    return renderHome();
+  } catch(err){
+    console.error('Erro no render:', err);
+    return renderFallback(err?.message || 'Erro ao renderizar.');
   }
-
-  renderHeaderProfile();
-
-  const bottomNav = document.getElementById('bottomNav');
-  if(bottomNav){
-    bottomNav.classList.toggle('hidden', !state.profile);
-  }
-
-  if(!state.user) return renderLogin();
-  if(!state.profile) return renderModelChoice();
-
-  if(currentTab === 'config' || currentTab === 'profile') return renderProfileScreen();
-  if(currentTab === 'register') return renderRegister();
-  if(currentTab === 'month') return renderMonth();
-
-  return renderHome();
 }
 
 function renderLogin(){
-  screenEl.innerHTML = `<section class="card login-wrap"><div style="width:100%;text-align:center"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para carregar seu perfil e manter o app pronto para a versão em nuvem.</p><button class="google" id="googleLogin">Entrar com Google</button>${!hasRealFirebaseConfig() ? '<p class="muted" style="margin-top:12px">Configure o arquivo firebase-config.js antes de publicar o login real.</p>' : ''}</div></section>`;
-  googleLogin.onclick = loginWithGoogle;
+  screenEl.innerHTML = `<section class="card login-wrap"><div style="width:100%;text-align:center"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para carregar seu perfil e sincronizar seus dados.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted" style="margin-top:12px">Versão ${APP_VERSION}</p></div></section>`;
+  const btn = document.getElementById('googleLogin');
+  if(btn) btn.onclick = loginWithGoogle;
 }
+
 function renderModelChoice(){
-  screenEl.innerHTML = `<section class="card"><h2>Escolha seu modelo de jornada</h2><p class="muted">Cada usuário escolhe direto seu próprio modelo. Sem perfis fixos.</p><div class="models">${Object.entries(MODELS).map(([key,m])=>`<button class="model-btn" data-model="${key}">${m.title}<small>${m.desc}</small></button>`).join('')}</div></section>`;
-  document.querySelectorAll('[data-model]').forEach(btn=>btn.onclick=()=>{
-    const key = btn.dataset.model; const m = MODELS[key];
-    state.profile = { model:key, city:m.city, bankStart:0, scaleStartDate:null, createdAt:new Date().toISOString() };
-    if(key==='tribuna_jornalismo') renderScaleSetup(); else save();
+  screenEl.innerHTML = `<section class="card"><h2>Escolha seu modelo de jornada</h2><p class="muted">Cada usuário escolhe seu próprio modelo.</p><div class="models">${Object.entries(MODELS).map(([key,m])=>`<button class="model-btn" data-model="${key}">${m.title}<small>${m.desc}</small></button>`).join('')}</div></section>`;
+  document.querySelectorAll('.model-btn').forEach((button) => {
+    button.onclick = () => {
+      const key = button.dataset.model;
+      const m = MODELS[key];
+      state.profile = {
+        model: key,
+        city: m.city || 'Santos',
+        bankStart: 0,
+        scaleStartDate: null,
+        createdAt: new Date().toISOString()
+      };
+      if(key === 'tribuna_jornalismo'){
+        screenEl.innerHTML = `<section class="card"><h2>Data inicial da escala</h2><p class="muted">Informe o primeiro dia trabalhado do ciclo 12x2.</p><label>Data inicial</label><input id="scaleStart" class="input" type="date" value="${iso(nowSP())}"><button class="primary full" id="saveScale">Salvar</button></section>`;
+        saveScale.onclick = () => {
+          state.profile.scaleStartDate = scaleStart.value;
+          save();
+        };
+      } else {
+        save();
+      }
+    };
   });
 }
+
 function renderScaleSetup(){
   screenEl.innerHTML = `<section class="card"><h2>TRIBUNA JORNALISMO</h2><p class="muted">Informe a data inicial da escala 12x2. Ela deve ser o primeiro dia trabalhado do ciclo.</p><label>Data inicial da escala</label><input id="scaleStart" class="input" type="date" value="${iso(nowSP())}"><button class="primary" style="width:100%;margin-top:14px" id="saveScale">Salvar modelo</button></section>`;
   saveScale.onclick = () => { state.profile.scaleStartDate = scaleStart.value; save(); };
@@ -980,6 +1031,7 @@ function renderConfig(){
 
 
 
+
 document.getElementById('profileBtn').onclick = goProfile;
 
 document.getElementById('homeBrand').onclick = () => {
@@ -1008,4 +1060,6 @@ setInterval(() => {
   }
 }, 1000);
 
-initFirebaseAuth().finally(render);
+initFirebaseAuth()
+  .catch((err) => console.warn('Firebase init falhou:', err))
+  .finally(() => render());

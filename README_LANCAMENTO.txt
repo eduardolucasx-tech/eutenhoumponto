@@ -1,3 +1,28 @@
+Eu tenho um ponto. — Release v1.2.7
+
+Build atual: v1.2.7
+
+
+================================================================================
+ATUALIZAÇÃO v1.2.7 — Safe Render / recuperação de tela vazia
+================================================================================
+
+Correções:
+- Adicionado render seguro com try/catch.
+- Adicionado fallback visual para impedir tela vazia.
+- renderLogin() reescrito de forma estável.
+- renderModelChoice() reescrito de forma estável.
+- initFirebaseAuth() agora sempre chama render(), mesmo se Firebase falhar.
+- Topo atualizado para v1.2.7.
+
+Como validar:
+1. Conferir topo v1.2.7.
+2. Se não estiver logado, deve aparecer a tela de login Google.
+3. Se estiver logado e sem perfil, deve aparecer escolha de modelo.
+4. Se estiver logado e com perfil, deve aparecer Home.
+5. A tela não deve ficar vazia.
+
+
 Eu tenho um ponto. — Release v1.2.6
 
 Build atual: v1.2.6
