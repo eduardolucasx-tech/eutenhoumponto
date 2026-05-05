@@ -1,2 +1,2 @@
-v1.2.3
-Build: Fix Perfil + versão visível
+v1.2.4
+Build: Correção rota Perfil

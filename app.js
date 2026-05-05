@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.2.3';
+const APP_VERSION = 'v1.2.4';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -496,8 +496,10 @@ function goProfile(){
 }
 
 function render(){
+  const currentTab = tab || 'home';
+
   document.querySelectorAll('.bottom-nav button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.tab === tab);
+    button.classList.toggle('active', button.dataset.tab === currentTab);
   });
 
   const badge = document.getElementById('modelBadge');
@@ -515,14 +517,11 @@ function render(){
   if(!state.user) return renderLogin();
   if(!state.profile) return renderModelChoice();
 
-  const map = {
-    home: renderHome,
-    register: renderRegister,
-    month: renderMonth,
-    config: renderConfig
-  };
+  if(currentTab === 'config' || currentTab === 'profile') return renderConfig();
+  if(currentTab === 'register') return renderRegister();
+  if(currentTab === 'month') return renderMonth();
 
-  (map[tab] || renderHome)();
+  return renderHome();
 }
 
 function renderLogin(){
@@ -945,6 +944,7 @@ function renderConfig(){
   };
 }
 
+
 document.getElementById('profileBtn').onclick = goProfile;
 
 document.getElementById('homeBrand').onclick = () => {
@@ -956,7 +956,8 @@ document.getElementById('homeBrand').onclick = () => {
 
 document.querySelectorAll('.bottom-nav button').forEach((button) => {
   button.onclick = () => {
-    tab = button.dataset.tab;
+    const nextTab = button.dataset.tab;
+    tab = (nextTab === 'profile') ? 'config' : nextTab;
     render();
   };
 });

@@ -1,8 +1,7 @@
 {
   "has_render_config": true,
-  "has_syncNow": true,
-  "has_disconnect": true,
-  "has_goProfile": true,
-  "has_version": true,
-  "bottom_nav_config": true
+  "render_direct_config": true,
+  "nav_sets_config": true,
+  "index_data_tab_config": true,
+  "version": true
 }

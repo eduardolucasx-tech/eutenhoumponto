@@ -1,3 +1,31 @@
+Eu tenho um ponto. — Release v1.2.4
+
+Build atual: v1.2.4
+
+
+================================================================================
+ATUALIZAÇÃO v1.2.4 — Correção definitiva da rota Perfil
+================================================================================
+
+Correções:
+- Corrigido roteamento da barra inferior.
+- Clique em Perfil agora chama diretamente renderConfig().
+- O render() agora trata explicitamente:
+  - home -> renderHome()
+  - register -> renderRegister()
+  - month -> renderMonth()
+  - config/profile -> renderConfig()
+- Mantido o clique no avatar/foto para abrir Perfil.
+- Mantido o clique no logo 1. para voltar ao Início.
+- Versão visível no topo atualizada para v1.2.4.
+
+Como validar:
+1. Abrir o app.
+2. Conferir no topo: v1.2.4.
+3. Tocar em Perfil na barra inferior.
+4. A tela precisa mostrar "Perfil e Configurações".
+
+
 Eu tenho um ponto. — Release v1.2.3
 
 Build atual: v1.2.3
