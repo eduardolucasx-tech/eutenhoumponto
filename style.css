@@ -451,3 +451,16 @@ textarea {
 .bottom-nav button span {
   pointer-events: none;
 }
+
+
+/* v1.3.5 — Resultado de importação no local certo */
+.result-card {
+  border-color: rgba(75,163,255,.18);
+  background: linear-gradient(180deg, rgba(31,111,235,.10), rgba(255,255,255,.03));
+}
+
+
+/* v1.3.6 — Leitura reforçada de PDF */
+.result-card h2 {
+  letter-spacing: -.03em;
+}

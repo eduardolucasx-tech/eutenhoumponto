@@ -1,8 +1,7 @@
 {
   "version": true,
-  "bottomNavDirect": true,
-  "parseTextSafe": true,
-  "rawImportSafe": true,
-  "confirmImportSafe": true,
-  "pdfSafe": true
+  "normalizePdfEspelhoText": true,
+  "extractEspelhoDailyRowsFromText": true,
+  "parseEspelhoLine": true,
+  "diagnostic": true
 }

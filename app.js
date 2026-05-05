@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.5';
+const APP_VERSION = 'v1.3.6';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -801,14 +801,66 @@ function brToIso(dateBr){
   const [dd,mm,yyyy] = dateBr.split('/');
   return `${yyyy}-${mm}-${dd}`;
 }
+
+function normalizePdfEspelhoText(text){
+  return String(text || '')
+    .replace(/\r/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[|]+/g, ' ')
+    .replace(/[ ]{2,}/g, ' ')
+    .trim();
+}
+
+function extractEspelhoDailyRowsFromText(text){
+  const normalized = normalizePdfEspelhoText(text);
+  const matches = [...normalized.matchAll(/(\d{2}\/\d{2}\/\d{4})\s+([A-Za-zÀ-ÿ]+)([\s\S]*?)(?=\d{2}\/\d{2}\/\d{4}\s+[A-Za-zÀ-ÿ]+|Banco de Horas|Espelho do Ponto|Empresa:|Matr[ií]cula|C[oó]digo|$)/gi)];
+  return matches.map(m => `${m[1]} ${m[2]} ${(m[3] || '').trim()}`.replace(/\s+/g,' ').trim());
+}
+
+function parseEspelhoLine(line){
+  const timeRe = /\b\d{1,2}:\d{2}\b/g;
+  const m = String(line || '').replace(/\s+/g,' ').trim().match(/^(\d{2}\/\d{2}\/\d{4})\s+([A-Za-zÀ-ÿ]+)\s*(.*)$/);
+  if(!m) return null;
+  const date = brToIso(m[1]);
+  const weekday = m[2];
+  const rest = m[3] || '';
+  const upper = rest.toUpperCase();
+  const times = [...rest.matchAll(timeRe)].map(x=>x[0].padStart(5,'0'));
+  const isAusente = /AUSENTE/.test(upper);
+  const isDsr = /D\.S\.R|DSR/.test(upper);
+  const obsBits = [];
+  if(isAusente) obsBits.push('Ausente');
+  if(isDsr) obsBits.push('DSR');
+  if(/PAIXAO|PAIXÃO/.test(upper)) obsBits.push('Paixão de Cristo');
+  if(/TIRADENTES/.test(upper)) obsBits.push('Tiradentes');
+  let punches = [];
+  if(!isAusente && !isDsr){
+    if(times.length >= 4) punches = times.slice(0,4);
+    else if(times.length === 3) punches = times.slice(0,2);
+    else if(times.length === 2){
+      const a = parseHM(times[0]); const b = parseHM(times[1]);
+      if(!(b < a && ['04:00','08:00'].includes(times[1]))) punches = times.slice(0,2);
+      else punches = [times[0]];
+    } else if(times.length === 1){
+      if(!['04:00','08:00'].includes(times[0])) punches = times.slice(0,1);
+    }
+  }
+  return { date, weekday, punches, closed:isAusente, note:obsBits.join(' · '), raw:line };
+}
+
 function parseEspelhoPontoText(text){
-  const lines = String(text||'').replace(/\r/g,'\n').split('\n').map(x=>x.trim()).filter(Boolean);
+  const normalizedText = normalizePdfEspelhoText(text);
+  const lines = normalizedText.split('\n').map(x=>x.trim()).filter(Boolean);
   const rows = [];
   const summary = { extraNormal:null, extraNoturna:null, faltaIntegral:null, saidaAntecipada:null, hrsNaoRealiz:null, saldoAnterior:null, debito:null, credito:null, saldoAtual:null, saldoAnteriorValorizado:null, saldoAtualValorizado:null, month:null };
   const timeRe = /\b\d{1,2}:\d{2}\b/g;
+  const extractedRows = extractEspelhoDailyRowsFromText(normalizedText);
+  const rowSource = extractedRows.length ? extractedRows : lines;
 
-  for(const rawLine of lines){
+  for(const rawLine of rowSource){
     const line = rawLine.replace(/\s+/g,' ');
+    const parsedDailyLine = parseEspelhoLine(line);
+    if(parsedDailyLine){ rows.push(parsedDailyLine); continue; }
     let m = line.match(/^(\d{2}\/\d{2}\/\d{4})\s+([A-Za-zÀ-ÿ]+)\s*(.*)$/);
     if(m){
       const date = brToIso(m[1]);
@@ -894,6 +946,12 @@ function parseEspelhoPontoText(text){
       const negatives = saldos.filter(x=>x<0);
       if(negatives.length) summary.saldoAtual = negatives[negatives.length-1];
     }
+  }
+  if(!rows.length){
+    extractEspelhoDailyRowsFromText(normalizedText).forEach(rowLine => {
+      const parsed = parseEspelhoLine(rowLine);
+      if(parsed) rows.push(parsed);
+    });
   }
   if(summary.debito === null && summary.hrsNaoRealiz !== null) summary.debito = summary.hrsNaoRealiz;
   if(summary.credito === null && (summary.extraNormal !== null || summary.extraNoturna !== null)) summary.credito = (summary.extraNormal||0) + (summary.extraNoturna||0);
@@ -1058,7 +1116,13 @@ function renderRegister(){
       if(confirmImportBtn) confirmImportBtn.onclick = () => { addPunch(targetDate,foundTime,'import_text'); tab='home'; render(); };
     };
     const handleParsedEspelho = (parsed) => {
-      if(!parsed.rows.length){ espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não encontrei linhas diárias no padrão do espelho.</p>'; return; }
+      if(!parsed.rows.length){
+        const chars = (rawEspelhoEl?.value || '').length;
+        espelhoBoxEl.className='card result-card';
+        espelhoBoxEl.innerHTML=`<h2>Texto lido, mas sem linhas reconhecidas</h2><p class="muted">O texto foi extraído (${chars} caracteres), mas não encontrei linhas diárias no padrão esperado do espelho.</p><p class="muted">Confirme se o PDF é o espelho mensal com colunas de data/dia/batidas. Se quiser, copie um trecho de 3 linhas do texto extraído e me mande para eu ajustar o parser.</p>`;
+        espelhoBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
+        return;
+      }
       espelhoBoxEl.className='card result-card'; espelhoBoxEl.innerHTML = previewEspelhoImport(parsed);
       espelhoBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
       const confirmPdfImportBtn = document.getElementById('confirmPdfImport');

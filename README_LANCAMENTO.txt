@@ -1,3 +1,51 @@
+Eu tenho um ponto. — Release v1.3.6
+
+Build atual: v1.3.6
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.6 — Leitura PDF reforçada
+================================================================================
+
+Correção:
+- O PDF podia ter o texto extraído corretamente, mas o parser não reconhecia linhas porque
+  o PDF.js entrega a tabela quebrada em colunas/trechos.
+- Adicionada normalização específica para texto de espelho.
+- Adicionada extração por blocos entre datas, aceitando texto contínuo.
+- Adicionada função parseEspelhoLine para reaproveitar a heurística de batidas.
+- Quando o texto é lido, mas nenhuma linha é reconhecida, o app mostra diagnóstico claro
+  em vez de parecer que o botão não funcionou.
+
+Validação:
+1. Registrar > Importar.
+2. Selecionar PDF do espelho.
+3. Tocar em Ler PDF do espelho.
+4. O texto deve aparecer no campo.
+5. A prévia deve aparecer logo abaixo do bloco de espelho.
+
+
+Eu tenho um ponto. — Release v1.3.5
+
+Build atual: v1.3.5
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.5 — Resultado da importação logo abaixo da entrada
+================================================================================
+
+Correção:
+- O bloco "Marcação encontrada" agora aparece logo abaixo de "Importar comprovante".
+- O resultado do espelho oficial aparece logo abaixo de "Importar espelho oficial".
+- Adicionado scroll suave para levar o usuário até o resultado gerado.
+- Pequeno destaque visual para cards de resultado.
+
+Validação:
+1. Ir em Registrar > Importar.
+2. Colar texto com DATA e HORA.
+3. Tocar em Ler DATA e HORA.
+4. O card "Marcação encontrada" deve aparecer imediatamente abaixo do bloco de comprovante.
+
+
 Eu tenho um ponto. — Release v1.3.4
 
 Build atual: v1.3.4

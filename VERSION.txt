@@ -1,2 +1,2 @@
-v1.3.4
-Build: Hotfix Perfil e Importar
+v1.3.6
+Build: Leitura PDF reforçada
