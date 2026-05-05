@@ -1,7 +1,7 @@
 {
-  "has_renderProfileScreen": true,
-  "goProfile_direct": true,
-  "tail_direct": true,
   "version": true,
-  "index_config": true
+  "cloudReady_var": true,
+  "renderProfileScreen": true,
+  "push_fallback": true,
+  "no_export_token": true
 }

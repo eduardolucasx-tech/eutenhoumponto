@@ -1,3 +1,26 @@
+Eu tenho um ponto. — Release v1.2.6
+
+Build atual: v1.2.6
+
+
+================================================================================
+ATUALIZAÇÃO v1.2.6 — Fix cloudReady / Perfil
+================================================================================
+
+Correções:
+- Corrigido erro do console: cloudReady is not defined.
+- A tela Perfil não deve mais quebrar antes de renderizar.
+- Adicionado fallback seguro para sincronização caso o Firestore ainda não inicialize.
+- Removida dependência insegura de variável global indefinida.
+- Topo atualizado para v1.2.6.
+
+Como validar:
+1. Conferir no topo: v1.2.6.
+2. Tocar em Perfil.
+3. A tela deve abrir "Perfil e Configurações".
+4. Abrir console e confirmar que não aparece cloudReady is not defined.
+
+
 Eu tenho um ponto. — Release v1.2.5
 
 Build atual: v1.2.5

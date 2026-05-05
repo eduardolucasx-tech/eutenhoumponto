@@ -1,5 +1,15 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.2.5';
+const APP_VERSION = 'v1.2.6';
+
+var firebaseReady = false;
+var firebaseAuth = null;
+var firebaseProvider = null;
+var firebaseFns = null;
+var firebaseDb = null;
+var firestoreFns = null;
+var cloudReady = false;
+var cloudSyncTimer = null;
+var cloudHydrating = false;
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -863,6 +873,14 @@ function renderImport(){
     confirmImport.onclick = () => { addPunch(targetDate,time,'import_text'); tab='home'; render(); };
   };
 }
+
+if(typeof pushStateToCloud !== 'function'){
+  var pushStateToCloud = async function(){
+    console.warn('Firestore Sync ainda não foi inicializado nesta build.');
+    cloudReady = false;
+  };
+}
+
 function renderProfileScreen(){
   const currentModel = state.profile?.model || 'tribuna_hub_prog';
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
@@ -903,7 +921,7 @@ function renderProfileScreen(){
       <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
       <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
 
-      <p class="muted" style="margin-top:12px">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
+      <p class="muted" style="margin-top:12px">Sincronização: ${(typeof cloudReady !== 'undefined' && cloudReady) ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
       <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
     </section>
   `;
@@ -944,7 +962,7 @@ function renderProfileScreen(){
   };
 
   document.getElementById('syncNow').onclick = async () => {
-    await pushStateToCloud(true);
+    if(typeof pushStateToCloud === 'function'){ if(typeof pushStateToCloud === 'function'){ await pushStateToCloud(true); } }
     alert(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização. Confira o Firestore e as regras.');
     renderProfileScreen();
   };

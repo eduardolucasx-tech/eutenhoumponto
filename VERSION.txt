@@ -1,2 +1,2 @@
-v1.2.5
-Build: Perfil direto
+v1.2.6
+Build: Fix cloudReady / Perfil
