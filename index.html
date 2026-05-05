@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Eu tenho um ponto.</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header class="topbar">
+      <button id="homeBrand" class="brand brand-button" type="button" aria-label="Voltar para bater ponto">
+        <div class="logo">1.</div>
+        <div>
+          <h1>Eu tenho um ponto.</h1>
+          <p id="modelBadge">Versão 1.0.1</p>
+        </div>
+      </button>
+      <button id="profileBtn" class="avatar" aria-label="Perfil">P</button>
+    </header>
+
+    <main id="screen"></main>
+
+    <nav class="bottom-nav" id="bottomNav">
+      <button data-tab="home" class="active"><span class="nav-icon">In</span><span>Início</span></button>
+      <button data-tab="register"><span class="nav-icon">Rg</span><span>Registrar</span></button>
+      <button data-tab="month"><span class="nav-icon">Ms</span><span>Mês</span></button>
+      <button data-tab="config"><span class="nav-icon">Pf</span><span>Perfil</span></button>
+    </nav>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

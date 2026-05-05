@@ -1,0 +1,16 @@
+{
+  "name": "Eu tenho um ponto.",
+  "short_name": "Meu Ponto",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a1118",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "description": "Controle pessoal de ponto, jornada e banco de horas."
+}
