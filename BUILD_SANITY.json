@@ -1,10 +1,6 @@
 {
   "version": true,
-  "firebaseReady_decl": 1,
-  "cloudReady_decl": 1,
-  "has_firestore_import": true,
-  "has_renderFallback": true,
-  "has_profile_direct": true,
-  "has_firebase_config_script": true,
-  "no_export_top": true
+  "badge_version": true,
+  "css_overflow_fix": true,
+  "css_mobile_breakpoints": true
 }

@@ -1,2 +1,2 @@
-v1.3.0
-Build: Firestore limpo / estável
+v1.3.1
+Build: Refino global de layout

@@ -1,3 +1,33 @@
+Eu tenho um ponto. — Release v1.3.1
+
+Build atual: v1.3.1
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.1 — Refino global de layout
+================================================================================
+
+Objetivo:
+- Corrigir elementos "fora do esquadro" no app inteiro, principalmente em mobile/iPhone/Safari.
+
+Ajustes aplicados:
+- Correção global de overflow horizontal.
+- Campos input/select/textarea agora respeitam 100% da largura do card.
+- Inputs de data/hora/texto com appearance ajustado para iOS Safari.
+- Cards e componentes com max-width e min-width seguros.
+- Aumento do espaço inferior do main para não colidir com a bottom bar.
+- Wrapping em blocos flex (perfil, arquivos, cabeçalhos de dia, etc.).
+- Grids e ações passam a empilhar em telas menores.
+- Melhoras de responsividade geral em 430px / 390px / 360px.
+- Versão atualizada no topo para v1.3.1.
+
+Validação sugerida:
+1. Abrir Registrar no iPhone/Safari.
+2. Verificar se os campos não ultrapassam os cards.
+3. Testar Home, Registrar, Mês e Perfil.
+4. Conferir se não existe rolagem horizontal.
+
+
 Eu tenho um ponto. — Release v1.3.0
 
 Build atual: v1.3.0
