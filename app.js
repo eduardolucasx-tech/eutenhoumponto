@@ -496,6 +496,9 @@ function goProfile(){
 }
 
 function render(){
+  document.querySelectorAll('.bottom-nav button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.tab === tab);
+  });
   document.getElementById('modelBadge').textContent = state.profile ? model().title : 'Versão 1.1.1';
   renderHeaderProfile();
   document.getElementById('bottomNav').classList.toggle('hidden', !state.profile);
@@ -841,24 +844,107 @@ function renderImport(){
   };
 }
 function renderConfig(){
-  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil e Configurações</h2><p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p></div></div><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${state.profile.model===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${state.profile.city==='Santos'?'selected':''}>Santos</option><option ${state.profile.city==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${fmtMin(Number(state.profile.bankStart)||0)}"><div id="scaleWrap"></div><div class="actions" style="margin-top:14px"><button class="secondary" id="reset">Resetar</button><button class="primary" id="saveCfg">Salvar</button></div><button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button><button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button><p class="muted">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.<br>Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p></section>`;
-  const drawScale = () => { scaleWrap.innerHTML = cfgModel.value==='tribuna_jornalismo' ? `<label>Data inicial da escala 12x2</label><input id="cfgScale" class="input" type="date" value="${state.profile.scaleStartDate||iso(nowSP())}">` : ''; };
-  cfgModel.onchange=drawScale; drawScale();
-  saveCfg.onclick = () => { state.profile.model=cfgModel.value; state.profile.city=cfgCity.value; state.profile.bankStart=parseSignedTime(cfgBank.value); if(cfgModel.value==='tribuna_jornalismo') state.profile.scaleStartDate=document.getElementById('cfgScale').value; save(); };
-  if(document.getElementById('syncNow')){
-    syncNow.onclick = async () => {
-      await pushStateToCloud(true);
-      alert(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização. Confira o Firestore e as regras.');
+  const currentModel = state.profile?.model || 'tribuna_hub_prog';
+  const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
+  const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
+
+  screenEl.innerHTML = `<section class="card">
+    <div class="profile-card">
+      <div class="profile-photo">${userPhotoHtml('large')}</div>
+      <div>
+        <h2 style="margin:0">Perfil e Configurações</h2>
+        <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
+      </div>
+    </div>
+
+    <label>Modelo</label>
+    <select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select>
+
+    <label>Cidade</label>
+    <select id="cfgCity">
+      <option ${currentCity==='Santos'?'selected':''}>Santos</option>
+      <option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option>
+    </select>
+
+    <label>Saldo inicial do ciclo</label>
+    <input id="cfgBank" class="input" type="text" value="${currentBank}">
+
+    <div id="scaleWrap"></div>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="secondary" id="reset">Resetar</button>
+      <button class="primary" id="saveCfg">Salvar</button>
+    </div>
+
+    <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
+    <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
+
+    <p class="muted" style="margin-top:12px">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
+    <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
+  </section>`;
+
+  const drawScale = () => {
+    scaleWrap.innerHTML = cfgModel.value === 'tribuna_jornalismo'
+      ? `<label>Data inicial da escala 12x2</label><input id="cfgScale" class="input" type="date" value="${state.profile.scaleStartDate || iso(nowSP())}">`
+      : '';
+  };
+
+  drawScale();
+  cfgModel.onchange = drawScale;
+
+  reset.onclick = () => {
+    if(confirm('Limpar todos os dados locais?')){
+      localStorage.removeItem(STORAGE_KEY);
+      state = load();
+      tab = 'home';
       render();
-    };
-  }
-  reset.onclick = () => { if(confirm('Apagar dados desta prévia?')){ localStorage.removeItem(STORAGE_KEY); state=load(); tab='home'; render(); } };
+    }
+  };
+
+  saveCfg.onclick = () => {
+    state.profile.model = cfgModel.value;
+    state.profile.city = cfgCity.value;
+    state.profile.bankStart = parseSignedTime(cfgBank.value);
+    if(cfgModel.value === 'tribuna_jornalismo'){
+      state.profile.scaleStartDate = document.getElementById('cfgScale').value;
+    }
+    save();
+  };
+
+  syncNow.onclick = async () => {
+    await pushStateToCloud(true);
+    alert(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização. Confira o Firestore e as regras.');
+    render();
+  };
+
+  disconnectGoogle.onclick = () => {
+    if(confirm('Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
+      logoutGoogle();
+    }
+  };
 }
 
+
 document.getElementById('profileBtn').onclick = goProfile;
-document.getElementById('homeBrand').onclick = goHome;
-document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>{ tab=b.dataset.tab; document.getElementById('profileBtn').onclick = goProfile;
-document.getElementById('homeBrand').onclick = goHome;
-document.querySelectorAll('.bottom-nav button').forEach(x=>x.classList.toggle('active',x===b)); render(); });
-setInterval(()=>{ if(state.profile && tab==='home'){ const el=document.getElementById('clockNow'); if(el) el.textContent=hm(nowSP()); } },1000);
+document.getElementById('homeBrand').onclick = () => {
+  if(state.profile){
+    tab = 'home';
+    render();
+  }
+};
+
+document.querySelectorAll('.bottom-nav button').forEach((button) => {
+  button.onclick = () => {
+    tab = button.dataset.tab;
+    render();
+  };
+});
+
+setInterval(() => {
+  if(state.profile && tab === 'home'){
+    const el = document.getElementById('clockNow');
+    if(el) el.textContent = hm(nowSP());
+  }
+}, 1000);
+
 initFirebaseAuth().finally(render);

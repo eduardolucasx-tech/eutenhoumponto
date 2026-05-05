@@ -89,3 +89,7 @@ service cloud.firestore {
 
 Correção v1.2.1:
 - Botão Sincronizar agora garantido na aba Perfil.
+
+Correção v1.2.2:
+- Corrigida navegação da aba Perfil.
+- Botões Sincronizar agora e Desconectar conta Google garantidos no Perfil.
