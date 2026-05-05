@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.2.4';
+const APP_VERSION = 'v1.2.5';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -492,14 +492,18 @@ function goHome(){
 function goProfile(){
   if(!state.profile) return;
   tab = 'config';
-  render();
+  document.querySelectorAll('.bottom-nav button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.tab === 'config');
+  });
+  renderProfileScreen();
 }
 
 function render(){
   const currentTab = tab || 'home';
 
   document.querySelectorAll('.bottom-nav button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.tab === currentTab);
+    const btnTab = button.dataset.tab;
+    button.classList.toggle('active', btnTab === currentTab || (btnTab === 'config' && currentTab === 'profile'));
   });
 
   const badge = document.getElementById('modelBadge');
@@ -517,7 +521,7 @@ function render(){
   if(!state.user) return renderLogin();
   if(!state.profile) return renderModelChoice();
 
-  if(currentTab === 'config' || currentTab === 'profile') return renderConfig();
+  if(currentTab === 'config' || currentTab === 'profile') return renderProfileScreen();
   if(currentTab === 'register') return renderRegister();
   if(currentTab === 'month') return renderMonth();
 
@@ -859,59 +863,67 @@ function renderImport(){
     confirmImport.onclick = () => { addPunch(targetDate,time,'import_text'); tab='home'; render(); };
   };
 }
-function renderConfig(){
+function renderProfileScreen(){
   const currentModel = state.profile?.model || 'tribuna_hub_prog';
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
-  screenEl.innerHTML = `<section class="card">
-    <div class="profile-card">
-      <div class="profile-photo">${userPhotoHtml('large')}</div>
-      <div>
-        <h2 style="margin:0">Perfil e Configurações</h2>
-        <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
-        <p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p>
+  screenEl.innerHTML = `
+    <section class="card">
+      <div class="profile-card">
+        <div class="profile-photo">${userPhotoHtml('large')}</div>
+        <div>
+          <h2 style="margin:0">Perfil e Configurações</h2>
+          <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
+          <p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p>
+        </div>
       </div>
-    </div>
 
-    <label>Modelo</label>
-    <select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select>
+      <label>Modelo</label>
+      <select id="cfgModel">
+        ${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}
+      </select>
 
-    <label>Cidade</label>
-    <select id="cfgCity">
-      <option ${currentCity==='Santos'?'selected':''}>Santos</option>
-      <option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option>
-    </select>
+      <label>Cidade</label>
+      <select id="cfgCity">
+        <option ${currentCity==='Santos'?'selected':''}>Santos</option>
+        <option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option>
+      </select>
 
-    <label>Saldo inicial do ciclo</label>
-    <input id="cfgBank" class="input" type="text" value="${currentBank}">
+      <label>Saldo inicial do ciclo</label>
+      <input id="cfgBank" class="input" type="text" value="${currentBank}">
 
-    <div id="scaleWrap"></div>
+      <div id="scaleWrap"></div>
 
-    <div class="actions" style="margin-top:14px">
-      <button class="secondary" id="reset">Resetar</button>
-      <button class="primary" id="saveCfg">Salvar</button>
-    </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="secondary" id="reset">Resetar</button>
+        <button class="primary" id="saveCfg">Salvar</button>
+      </div>
 
-    <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
-    <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
+      <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
+      <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
 
-    <p class="muted" style="margin-top:12px">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
-    <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
-  </section>`;
+      <p class="muted" style="margin-top:12px">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
+      <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
+    </section>
+  `;
+
+  const cfgModelEl = document.getElementById('cfgModel');
+  const cfgCityEl = document.getElementById('cfgCity');
+  const cfgBankEl = document.getElementById('cfgBank');
+  const scaleWrapEl = document.getElementById('scaleWrap');
 
   const drawScale = () => {
-    const wrap = document.getElementById('scaleWrap');
-    if(!wrap) return;
-    wrap.innerHTML = cfgModel.value === 'tribuna_jornalismo'
+    if(!scaleWrapEl || !cfgModelEl) return;
+    scaleWrapEl.innerHTML = cfgModelEl.value === 'tribuna_jornalismo'
       ? `<label>Data inicial da escala 12x2</label><input id="cfgScale" class="input" type="date" value="${state.profile.scaleStartDate || iso(nowSP())}">`
       : '';
   };
 
   drawScale();
-  cfgModel.onchange = drawScale;
+  cfgModelEl.onchange = drawScale;
 
-  reset.onclick = () => {
+  document.getElementById('reset').onclick = () => {
     if(confirm('Limpar todos os dados locais?')){
       localStorage.removeItem(STORAGE_KEY);
       state = load();
@@ -920,29 +932,34 @@ function renderConfig(){
     }
   };
 
-  saveCfg.onclick = () => {
-    state.profile.model = cfgModel.value;
-    state.profile.city = cfgCity.value;
-    state.profile.bankStart = parseSignedTime(cfgBank.value);
-    if(cfgModel.value === 'tribuna_jornalismo'){
+  document.getElementById('saveCfg').onclick = () => {
+    state.profile.model = cfgModelEl.value;
+    state.profile.city = cfgCityEl.value;
+    state.profile.bankStart = parseSignedTime(cfgBankEl.value);
+    if(cfgModelEl.value === 'tribuna_jornalismo'){
       const scaleInput = document.getElementById('cfgScale');
       if(scaleInput) state.profile.scaleStartDate = scaleInput.value;
     }
     save();
   };
 
-  syncNow.onclick = async () => {
+  document.getElementById('syncNow').onclick = async () => {
     await pushStateToCloud(true);
     alert(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização. Confira o Firestore e as regras.');
-    render();
+    renderProfileScreen();
   };
 
-  disconnectGoogle.onclick = () => {
+  document.getElementById('disconnectGoogle').onclick = () => {
     if(confirm('Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
       logoutGoogle();
     }
   };
 }
+
+function renderConfig(){
+  return renderProfileScreen();
+}
+
 
 
 document.getElementById('profileBtn').onclick = goProfile;
@@ -957,7 +974,11 @@ document.getElementById('homeBrand').onclick = () => {
 document.querySelectorAll('.bottom-nav button').forEach((button) => {
   button.onclick = () => {
     const nextTab = button.dataset.tab;
-    tab = (nextTab === 'profile') ? 'config' : nextTab;
+    if(nextTab === 'config' || nextTab === 'profile'){
+      goProfile();
+      return;
+    }
+    tab = nextTab;
     render();
   };
 });

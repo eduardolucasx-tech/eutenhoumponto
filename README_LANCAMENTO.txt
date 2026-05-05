@@ -1,3 +1,27 @@
+Eu tenho um ponto. — Release v1.2.5
+
+Build atual: v1.2.5
+
+
+================================================================================
+ATUALIZAÇÃO v1.2.5 — Perfil direto sem depender do roteador
+================================================================================
+
+Correções:
+- Criada função independente renderProfileScreen().
+- A aba Perfil agora chama renderProfileScreen() diretamente.
+- O clique no botão Perfil não depende mais do roteador geral para trocar a tela.
+- O avatar/foto também chama renderProfileScreen() diretamente.
+- O renderConfig() agora é apenas um alias para renderProfileScreen().
+- Topo atualizado para v1.2.5.
+
+Como validar:
+1. Conferir no topo: v1.2.5.
+2. Tocar em Perfil.
+3. A tela precisa trocar para "Perfil e Configurações".
+4. Testar "Sincronizar agora".
+
+
 Eu tenho um ponto. — Release v1.2.4
 
 Build atual: v1.2.4

@@ -1,2 +1,2 @@
-v1.2.4
-Build: Correção rota Perfil
+v1.2.5
+Build: Perfil direto

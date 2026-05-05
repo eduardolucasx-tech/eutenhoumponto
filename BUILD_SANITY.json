@@ -1,7 +1,7 @@
 {
-  "has_render_config": true,
-  "render_direct_config": true,
-  "nav_sets_config": true,
-  "index_data_tab_config": true,
-  "version": true
+  "has_renderProfileScreen": true,
+  "goProfile_direct": true,
+  "tail_direct": true,
+  "version": true,
+  "index_config": true
 }
