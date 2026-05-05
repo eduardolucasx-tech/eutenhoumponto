@@ -1,2 +1,2 @@
-v1.2.8
-Build: Fix Firebase duplicado
+v1.3.0
+Build: Firestore limpo / estável

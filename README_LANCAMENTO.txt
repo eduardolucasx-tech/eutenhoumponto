@@ -1,158 +1,27 @@
-Eu tenho um ponto. — Release v1.2.8
+Eu tenho um ponto. — Release v1.3.0
 
-Build atual: v1.2.8
+Build atual: v1.3.0
 
 
 ================================================================================
-ATUALIZAÇÃO v1.2.8 — Fix Firebase duplicado / tela vazia
+ATUALIZAÇÃO v1.3.0 — Firestore limpo / build estável
 ================================================================================
+
+Esta versão foi reconstruída a partir da v1.1.1 estável, com Firestore Sync aplicado de forma limpa.
 
 Correções:
-- Removidas declarações duplicadas de firebaseReady e variáveis relacionadas.
-- Corrigido erro: Identifier 'firebaseReady' has already been declared.
-- Mantido render seguro para impedir tela vazia.
-- Mantido login Google/Firebase e Firestore Sync.
-- Topo atualizado para v1.2.8.
+- Removidas camadas acumuladas que estavam quebrando deploy/render.
+- Firebase Auth + Firestore Sync organizados em um único bloco.
+- Sem duplicidade de firebaseReady/cloudReady.
+- Render seguro com fallback.
+- Perfil renderizado diretamente por renderProfileScreen().
+- README e topo informam a versão atual.
+- Vercel deve conseguir concluir o deploy normalmente.
 
-Como validar:
-1. Conferir topo: v1.2.8.
-2. Abrir console e confirmar que não aparece firebaseReady duplicado.
-3. A tela deve renderizar Login, Escolha de modelo ou Home.
-4. Testar Perfil.
-
-
-Eu tenho um ponto. — Release v1.2.7
-
-Build atual: v1.2.7
-
-
-================================================================================
-ATUALIZAÇÃO v1.2.7 — Safe Render / recuperação de tela vazia
-================================================================================
-
-Correções:
-- Adicionado render seguro com try/catch.
-- Adicionado fallback visual para impedir tela vazia.
-- renderLogin() reescrito de forma estável.
-- renderModelChoice() reescrito de forma estável.
-- initFirebaseAuth() agora sempre chama render(), mesmo se Firebase falhar.
-- Topo atualizado para v1.2.7.
-
-Como validar:
-1. Conferir topo v1.2.7.
-2. Se não estiver logado, deve aparecer a tela de login Google.
-3. Se estiver logado e sem perfil, deve aparecer escolha de modelo.
-4. Se estiver logado e com perfil, deve aparecer Home.
-5. A tela não deve ficar vazia.
-
-
-Eu tenho um ponto. — Release v1.2.6
-
-Build atual: v1.2.6
-
-
-================================================================================
-ATUALIZAÇÃO v1.2.6 — Fix cloudReady / Perfil
-================================================================================
-
-Correções:
-- Corrigido erro do console: cloudReady is not defined.
-- A tela Perfil não deve mais quebrar antes de renderizar.
-- Adicionado fallback seguro para sincronização caso o Firestore ainda não inicialize.
-- Removida dependência insegura de variável global indefinida.
-- Topo atualizado para v1.2.6.
-
-Como validar:
-1. Conferir no topo: v1.2.6.
-2. Tocar em Perfil.
-3. A tela deve abrir "Perfil e Configurações".
-4. Abrir console e confirmar que não aparece cloudReady is not defined.
-
-
-Eu tenho um ponto. — Release v1.2.5
-
-Build atual: v1.2.5
-
-
-================================================================================
-ATUALIZAÇÃO v1.2.5 — Perfil direto sem depender do roteador
-================================================================================
-
-Correções:
-- Criada função independente renderProfileScreen().
-- A aba Perfil agora chama renderProfileScreen() diretamente.
-- O clique no botão Perfil não depende mais do roteador geral para trocar a tela.
-- O avatar/foto também chama renderProfileScreen() diretamente.
-- O renderConfig() agora é apenas um alias para renderProfileScreen().
-- Topo atualizado para v1.2.5.
-
-Como validar:
-1. Conferir no topo: v1.2.5.
-2. Tocar em Perfil.
-3. A tela precisa trocar para "Perfil e Configurações".
-4. Testar "Sincronizar agora".
-
-
-Eu tenho um ponto. — Release v1.2.4
-
-Build atual: v1.2.4
-
-
-================================================================================
-ATUALIZAÇÃO v1.2.4 — Correção definitiva da rota Perfil
-================================================================================
-
-Correções:
-- Corrigido roteamento da barra inferior.
-- Clique em Perfil agora chama diretamente renderConfig().
-- O render() agora trata explicitamente:
-  - home -> renderHome()
-  - register -> renderRegister()
-  - month -> renderMonth()
-  - config/profile -> renderConfig()
-- Mantido o clique no avatar/foto para abrir Perfil.
-- Mantido o clique no logo 1. para voltar ao Início.
-- Versão visível no topo atualizada para v1.2.4.
-
-Como validar:
-1. Abrir o app.
-2. Conferir no topo: v1.2.4.
-3. Tocar em Perfil na barra inferior.
-4. A tela precisa mostrar "Perfil e Configurações".
-
-
-Eu tenho um ponto. — Release v1.2.3
-
-Build atual: v1.2.3
-Nome e logo mantidos.
-Firebase Config: eutenhoumponto-ce487
-Google Auth: integrado
-Firestore Sync: integrado
-
-
-================================================================================
-ATUALIZAÇÃO v1.2.3 — Fix Perfil + versão visível
-================================================================================
-
-Data da build: 2026-05-05
-
-Correções:
-- Corrigida novamente a navegação da aba Perfil.
-- Botão Perfil da barra inferior força tab = 'config' e renderiza Perfil e Configurações.
-- Clique na foto/avatar também abre Perfil.
-- Clique no logo 1. continua voltando para Início / Bater ponto.
-- Botões garantidos na aba Perfil:
-  - Sincronizar agora
-  - Desconectar conta Google
-
-Versão visível:
-- O topo do app agora mostra a versão junto do modelo:
-  Ex.: v1.2.3 · TRIBUNA HUB/PROG
-- A tela Perfil também mostra: Versão v1.2.3
-
-Observação:
-- Em atualização no celular/PWA, se a versão antiga continuar aparecendo,
-  remova o app da tela inicial ou limpe o cache do site antes de testar.
+Firestore:
+- Salva em users/{uid}/profile/main
+- Mantém cópia local em localStorage
+- Botão Sincronizar agora no Perfil
 
 
 Eu tenho um ponto. — Release v1.1.1
@@ -191,62 +60,3 @@ Atualização v1.1:
 
 Atualização v1.1.1:
 - firebase-config.js preenchido com o projeto eutenhoumponto-ce487.
-
-
-Atualização v1.2:
-- Ligado Firestore para sincronizar dados por conta Google.
-- O app salva perfil, marcações, importações e banco oficial em:
-  users/{uid}/profile/main
-- O app ainda mantém uma cópia local para abrir rápido.
-
-Regras Firestore recomendadas:
-
-rules_version = '2';
-
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(uid) {
-      return isSignedIn() && request.auth.uid == uid;
-    }
-
-    match /users/{uid} {
-      allow read, create, update, delete: if isOwner(uid);
-
-      match /profile/{docId} {
-        allow read, create, update, delete: if isOwner(uid);
-      }
-
-      match /days/{dayId} {
-        allow read, create, update, delete: if isOwner(uid);
-      }
-
-      match /imports/{importId} {
-        allow read, create, update, delete: if isOwner(uid);
-      }
-
-      match /bankCycles/{cycleId} {
-        allow read, create, update, delete: if isOwner(uid);
-      }
-    }
-
-    match /publicConfig/{docId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-
-Correção v1.2.1:
-- Botão Sincronizar agora garantido na aba Perfil.
-
-Correção v1.2.2:
-- Corrigida navegação da aba Perfil.
-- Botões Sincronizar agora e Desconectar conta Google garantidos no Perfil.

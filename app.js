@@ -1,46 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.2.8';
-
-
-
-
-
-var firebaseReady = false;
-var firebaseAuth = null;
-var firebaseProvider = null;
-var firebaseFns = null;
-var firebaseDb = null;
-var firestoreFns = null;
-var firebaseAuthWarning = "";
-var cloudReady = false;
-var cloudSyncTimer = null;
-var cloudHydrating = false;
-
-window.addEventListener('error', (event) => {
-  console.error('Erro global capturado:', event.error || event.message);
-  const screen = document.getElementById('screen');
-  if(screen && !screen.innerHTML.trim()){
-    screen.innerHTML = `<section class="card"><h2>Erro ao carregar</h2><p class="muted">O app encontrou um erro antes de desenhar a tela.</p><p class="muted">${String(event.message || '')}</p><button class="primary full" onclick="localStorage.clear(); location.reload()">Resetar e recarregar</button></section>`;
-  }
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-  console.error('Promessa rejeitada:', event.reason);
-});
-
-function renderFallback(message='Não consegui carregar esta tela.'){
-  screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${message}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
-  const btn = document.getElementById('fallbackReset');
-  if(btn){
-    btn.onclick = () => {
-      localStorage.removeItem(STORAGE_KEY);
-      state = load();
-      tab = 'home';
-      render();
-    };
-  }
-}
-
+const APP_VERSION = 'v1.3.0';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -90,6 +49,18 @@ function isHoliday(date, city='Santos'){
   return base.includes(date);
 }
 
+
+
+var firebaseReady = false;
+var firebaseAuth = null;
+var firebaseProvider = null;
+var firebaseFns = null;
+var firebaseDb = null;
+var firestoreFns = null;
+var cloudReady = false;
+var cloudHydrating = false;
+var cloudSyncTimer = null;
+
 function hasRealFirebaseConfig(){
   const cfg = window.FIREBASE_CONFIG || {};
   return !!(cfg.apiKey && !String(cfg.apiKey).includes("COLE_") && cfg.authDomain && !String(cfg.authDomain).includes("SEU_PROJETO"));
@@ -100,36 +71,120 @@ async function initFirebaseAuth(){
   try{
     const appMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
     const authMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js");
+    const fsMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js");
+
     const firebaseApp = appMod.initializeApp(window.FIREBASE_CONFIG);
     firebaseAuth = authMod.getAuth(firebaseApp);
     firebaseProvider = new authMod.GoogleAuthProvider();
     firebaseFns = authMod;
+    firebaseDb = fsMod.getFirestore(firebaseApp);
+    firestoreFns = fsMod;
     firebaseReady = true;
-    authMod.onAuthStateChanged(firebaseAuth, (user) => {
+
+    authMod.onAuthStateChanged(firebaseAuth, async (user) => {
       if(user){
         state.user = {
+          uid: user.uid,
           name: user.displayName || "Usuário Google",
           email: user.email || "",
           photoURL: user.photoURL || "",
-          uid: user.uid,
           provider: "firebase_google"
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        initFirebaseAuth().finally(render);
+        await hydrateFromCloud();
+        render();
+      } else {
+        cloudReady = false;
       }
     });
+
     return true;
   }catch(err){
-    firebaseAuthWarning = err?.message || String(err);
-    console.warn("Firebase Auth não iniciou:", err);
+    console.warn("Firebase Auth/Firestore não iniciou:", err);
     return false;
   }
+}
+
+function stateForCloud(){
+  return {
+    profile: state.profile || null,
+    days: state.days || {},
+    imports: state.imports || [],
+    officialBank: state.officialBank || {},
+    updatedAtLocal: new Date().toISOString()
+  };
+}
+
+async function cloudDocRef(){
+  if(!firebaseDb || !firestoreFns || !state.user?.uid) return null;
+  return firestoreFns.doc(firebaseDb, "users", state.user.uid, "profile", "main");
+}
+
+function mergeCloudWithLocal(cloud){
+  const local = stateForCloud();
+  return {
+    profile: local.profile || cloud.profile || null,
+    days: { ...(cloud.days || {}), ...(local.days || {}) },
+    imports: Array.isArray(local.imports) && local.imports.length ? local.imports : (cloud.imports || []),
+    officialBank: { ...(cloud.officialBank || {}), ...(local.officialBank || {}) }
+  };
+}
+
+async function hydrateFromCloud(){
+  if(!firebaseDb || !firestoreFns || !state.user?.uid) return;
+  cloudHydrating = true;
+  try{
+    const ref = await cloudDocRef();
+    const snap = await firestoreFns.getDoc(ref);
+    if(snap.exists()){
+      const merged = mergeCloudWithLocal(snap.data() || {});
+      state.profile = merged.profile;
+      state.days = merged.days || {};
+      state.imports = merged.imports || [];
+      state.officialBank = merged.officialBank || {};
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+    await pushStateToCloud(true);
+    cloudReady = true;
+  }catch(err){
+    console.warn("Falha ao carregar/salvar dados na nuvem:", err);
+    cloudReady = false;
+  }finally{
+    cloudHydrating = false;
+  }
+}
+
+async function pushStateToCloud(immediate=false){
+  if(cloudHydrating || !firebaseDb || !firestoreFns || !state.user?.uid) return;
+  const doPush = async () => {
+    try{
+      const ref = await cloudDocRef();
+      if(!ref) return;
+      await firestoreFns.setDoc(ref, {
+        ...stateForCloud(),
+        userMeta: {
+          name: state.user?.name || "",
+          email: state.user?.email || "",
+          photoURL: state.user?.photoURL || ""
+        },
+        updatedAt: firestoreFns.serverTimestamp()
+      }, { merge: true });
+      cloudReady = true;
+    }catch(err){
+      console.warn("Falha ao sincronizar com Firestore:", err);
+      cloudReady = false;
+    }
+  };
+
+  if(immediate) return doPush();
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(doPush, 700);
 }
 
 async function loginWithGoogle(){
   const ok = await initFirebaseAuth();
   if(!ok){
-    alert("Firebase ainda não está configurado. Abra firebase-config.js, cole o firebaseConfig do seu projeto e ative o login Google no Firebase Console.");
+    alert("Firebase ainda não iniciou. Confira firebase-config.js, domínio autorizado e Authentication > Google.");
     return;
   }
   try{
@@ -140,13 +195,30 @@ async function loginWithGoogle(){
 }
 
 async function logoutGoogle(){
-  if(firebaseReady && firebaseAuth){
-    try{ await firebaseFns.signOut(firebaseAuth); }catch(err){ console.warn(err); }
+  try{
+    if(firebaseReady && firebaseAuth && firebaseFns){
+      await firebaseFns.signOut(firebaseAuth);
+    }
+  }catch(err){
+    console.warn("Falha ao desconectar:", err);
   }
   state.user = null;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   tab = "home";
   render();
+}
+
+function renderFallback(message='Não consegui carregar esta tela.'){
+  screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${message}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
+  const btn = document.getElementById('fallbackReset');
+  if(btn){
+    btn.onclick = () => {
+      localStorage.removeItem(STORAGE_KEY);
+      state = load();
+      tab = 'home';
+      render();
+    };
+  }
 }
 
 let state = load();
@@ -171,7 +243,7 @@ function load(){
     return fresh;
   }
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); render(); }
+function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(); render(); }
 function model(){ return state.profile ? MODELS[state.profile.model] : null; }
 function day(date=iso(nowSP())){ if(!state.days[date]) state.days[date] = { date, punches:[], note:'' }; return state.days[date]; }
 function punchesOf(dayObj){ return [...(dayObj.punches||[])]; }
@@ -526,48 +598,34 @@ function goHome(){
 function goProfile(){
   if(!state.profile) return;
   tab = 'config';
-  document.querySelectorAll('.bottom-nav button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.tab === 'config');
-  });
   renderProfileScreen();
 }
 
 function render(){
   try{
     const currentTab = tab || 'home';
-
     document.querySelectorAll('.bottom-nav button').forEach((button) => {
-      button.classList.toggle('active', button.dataset.tab === currentTab);
+      button.classList.toggle('active', button.dataset.tab === currentTab || (button.dataset.tab === 'config' && currentTab === 'profile'));
     });
-
     const badge = document.getElementById('modelBadge');
-    if(badge){
-      badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
-    }
-
+    if(badge) badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
     renderHeaderProfile();
-
     const bottomNav = document.getElementById('bottomNav');
-    if(bottomNav){
-      bottomNav.classList.toggle('hidden', !state.profile);
-    }
-
+    if(bottomNav) bottomNav.classList.toggle('hidden', !state.profile);
     if(!state.user) return renderLogin();
     if(!state.profile) return renderModelChoice();
-
     if(currentTab === 'config' || currentTab === 'profile') return renderProfileScreen();
     if(currentTab === 'register') return renderRegister();
     if(currentTab === 'month') return renderMonth();
-
     return renderHome();
-  } catch(err){
-    console.error('Erro no render:', err);
-    return renderFallback(err?.message || 'Erro ao renderizar.');
+  }catch(err){
+    console.error("Erro no render:", err);
+    return renderFallback(err?.message || "Erro ao renderizar.");
   }
 }
 
 function renderLogin(){
-  screenEl.innerHTML = `<section class="card login-wrap"><div style="width:100%;text-align:center"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para carregar seu perfil e sincronizar seus dados.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted" style="margin-top:12px">Versão ${APP_VERSION}</p></div></section>`;
+  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para sincronizar seu perfil, marcações e banco de horas.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted" style="margin-top:12px">Versão ${APP_VERSION}</p></section></div>`;
   const btn = document.getElementById('googleLogin');
   if(btn) btn.onclick = loginWithGoogle;
 }
@@ -921,58 +979,33 @@ function renderImport(){
     confirmImport.onclick = () => { addPunch(targetDate,time,'import_text'); tab='home'; render(); };
   };
 }
-
-if(typeof pushStateToCloud !== 'function'){
-  var pushStateToCloud = async function(){
-    console.warn('Firestore Sync ainda não foi inicializado nesta build.');
-    cloudReady = false;
-  };
-}
-
 function renderProfileScreen(){
   const currentModel = state.profile?.model || 'tribuna_hub_prog';
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
-  screenEl.innerHTML = `
-    <section class="card">
-      <div class="profile-card">
-        <div class="profile-photo">${userPhotoHtml('large')}</div>
-        <div>
-          <h2 style="margin:0">Perfil e Configurações</h2>
-          <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
-          <p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p>
-        </div>
+  screenEl.innerHTML = `<section class="card">
+    <div class="profile-card">
+      <div class="profile-photo">${userPhotoHtml('large')}</div>
+      <div>
+        <h2 style="margin:0">Perfil e Configurações</h2>
+        <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
+        <p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p>
       </div>
-
-      <label>Modelo</label>
-      <select id="cfgModel">
-        ${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}
-      </select>
-
-      <label>Cidade</label>
-      <select id="cfgCity">
-        <option ${currentCity==='Santos'?'selected':''}>Santos</option>
-        <option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option>
-      </select>
-
-      <label>Saldo inicial do ciclo</label>
-      <input id="cfgBank" class="input" type="text" value="${currentBank}">
-
-      <div id="scaleWrap"></div>
-
-      <div class="actions" style="margin-top:14px">
-        <button class="secondary" id="reset">Resetar</button>
-        <button class="primary" id="saveCfg">Salvar</button>
-      </div>
-
-      <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
-      <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
-
-      <p class="muted" style="margin-top:12px">Sincronização: ${(typeof cloudReady !== 'undefined' && cloudReady) ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
-      <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
-    </section>
-  `;
+    </div>
+    <label>Modelo</label>
+    <select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select>
+    <label>Cidade</label>
+    <select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select>
+    <label>Saldo inicial do ciclo</label>
+    <input id="cfgBank" class="input" type="text" value="${currentBank}">
+    <div id="scaleWrap"></div>
+    <div class="actions" style="margin-top:14px"><button class="secondary" id="reset">Resetar</button><button class="primary" id="saveCfg">Salvar</button></div>
+    <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
+    <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
+    <p class="muted" style="margin-top:12px">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
+    <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
+  </section>`;
 
   const cfgModelEl = document.getElementById('cfgModel');
   const cfgCityEl = document.getElementById('cfgCity');
@@ -985,7 +1018,6 @@ function renderProfileScreen(){
       ? `<label>Data inicial da escala 12x2</label><input id="cfgScale" class="input" type="date" value="${state.profile.scaleStartDate || iso(nowSP())}">`
       : '';
   };
-
   drawScale();
   cfgModelEl.onchange = drawScale;
 
@@ -1010,7 +1042,7 @@ function renderProfileScreen(){
   };
 
   document.getElementById('syncNow').onclick = async () => {
-    if(typeof pushStateToCloud === 'function'){ if(typeof pushStateToCloud === 'function'){ await pushStateToCloud(true); } }
+    await pushStateToCloud(true);
     alert(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização. Confira o Firestore e as regras.');
     renderProfileScreen();
   };
@@ -1027,37 +1059,24 @@ function renderConfig(){
 }
 
 
-
-
-
 document.getElementById('profileBtn').onclick = goProfile;
-
 document.getElementById('homeBrand').onclick = () => {
-  if(state.profile){
-    tab = 'home';
-    render();
-  }
+  if(state.profile){ tab = 'home'; render(); }
 };
-
 document.querySelectorAll('.bottom-nav button').forEach((button) => {
   button.onclick = () => {
     const nextTab = button.dataset.tab;
-    if(nextTab === 'config' || nextTab === 'profile'){
-      goProfile();
-      return;
-    }
+    if(nextTab === 'config' || nextTab === 'profile'){ goProfile(); return; }
     tab = nextTab;
     render();
   };
 });
-
 setInterval(() => {
   if(state.profile && tab === 'home'){
     const el = document.getElementById('clockNow');
     if(el) el.textContent = hm(nowSP());
   }
 }, 1000);
-
 initFirebaseAuth()
-  .catch((err) => console.warn('Firebase init falhou:', err))
+  .catch((err) => console.warn("Firebase init falhou:", err))
   .finally(() => render());

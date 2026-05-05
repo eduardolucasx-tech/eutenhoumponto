@@ -1,7 +1,10 @@
 {
+  "version": true,
   "firebaseReady_decl": 1,
   "cloudReady_decl": 1,
-  "appVersion": true,
+  "has_firestore_import": true,
   "has_renderFallback": true,
+  "has_profile_direct": true,
+  "has_firebase_config_script": true,
   "no_export_top": true
 }
