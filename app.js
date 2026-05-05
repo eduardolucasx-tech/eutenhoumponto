@@ -48,6 +48,72 @@ function isHoliday(date, city='Santos'){
   return base.includes(date);
 }
 
+
+let firebaseReady = false;
+let firebaseAuth = null;
+let firebaseProvider = null;
+let firebaseFns = null;
+let firebaseAuthWarning = "";
+
+function hasRealFirebaseConfig(){
+  const cfg = window.FIREBASE_CONFIG || {};
+  return !!(cfg.apiKey && !String(cfg.apiKey).includes("COLE_") && cfg.authDomain && !String(cfg.authDomain).includes("SEU_PROJETO"));
+}
+
+async function initFirebaseAuth(){
+  if(firebaseReady || !hasRealFirebaseConfig()) return firebaseReady;
+  try{
+    const appMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
+    const authMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js");
+    const firebaseApp = appMod.initializeApp(window.FIREBASE_CONFIG);
+    firebaseAuth = authMod.getAuth(firebaseApp);
+    firebaseProvider = new authMod.GoogleAuthProvider();
+    firebaseFns = authMod;
+    firebaseReady = true;
+    authMod.onAuthStateChanged(firebaseAuth, (user) => {
+      if(user){
+        state.user = {
+          name: user.displayName || "Usuário Google",
+          email: user.email || "",
+          photoURL: user.photoURL || "",
+          uid: user.uid,
+          provider: "firebase_google"
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        initFirebaseAuth().finally(render);
+      }
+    });
+    return true;
+  }catch(err){
+    firebaseAuthWarning = err?.message || String(err);
+    console.warn("Firebase Auth não iniciou:", err);
+    return false;
+  }
+}
+
+async function loginWithGoogle(){
+  const ok = await initFirebaseAuth();
+  if(!ok){
+    alert("Firebase ainda não está configurado. Abra firebase-config.js, cole o firebaseConfig do seu projeto e ative o login Google no Firebase Console.");
+    return;
+  }
+  try{
+    await firebaseFns.signInWithPopup(firebaseAuth, firebaseProvider);
+  }catch(err){
+    alert("Não foi possível entrar com Google: " + (err?.message || err));
+  }
+}
+
+async function logoutGoogle(){
+  if(firebaseReady && firebaseAuth){
+    try{ await firebaseFns.signOut(firebaseAuth); }catch(err){ console.warn(err); }
+  }
+  state.user = null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  tab = "home";
+  render();
+}
+
 let state = load();
 let tab = 'home';
 let selectedMonthValue = null;
@@ -430,17 +496,18 @@ function goProfile(){
 }
 
 function render(){
-  document.getElementById('modelBadge').textContent = state.profile ? model().title : 'Versão 1.0.1';
+  document.getElementById('modelBadge').textContent = state.profile ? model().title : 'Versão 1.1';
   renderHeaderProfile();
   document.getElementById('bottomNav').classList.toggle('hidden', !state.profile);
+  if(!state.user) return renderLogin();
   if(!state.user) return renderLogin();
   if(!state.profile) return renderModelChoice();
   const map = {home:renderHome, register:renderRegister, month:renderMonth, config:renderConfig};
   (map[tab] || renderHome)();
 }
 function renderLogin(){
-  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Prévia com conta Google, perfil por usuário, modelos de jornada e importação preparada para OCR em nuvem.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted">Nesta prévia, o login é simulado localmente. Na versão Firebase, entra Firebase Auth + Google.</p></section></div>`;
-  googleLogin.onclick = () => { state.user = {uid:'demo-user', name:'Usuário Google', email:'usuario@gmail.com', photoURL:''}; save(); };
+  screenEl.innerHTML = `<section class="card login-wrap"><div style="width:100%;text-align:center"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para carregar seu perfil e manter o app pronto para a versão em nuvem.</p><button class="google" id="googleLogin">Entrar com Google</button>${!hasRealFirebaseConfig() ? '<p class="muted" style="margin-top:12px">Configure o arquivo firebase-config.js antes de publicar o login real.</p>' : ''}</div></section>`;
+  googleLogin.onclick = loginWithGoogle;
 }
 function renderModelChoice(){
   screenEl.innerHTML = `<section class="card"><h2>Escolha seu modelo de jornada</h2><p class="muted">Cada usuário escolhe direto seu próprio modelo. Sem perfis fixos.</p><div class="models">${Object.entries(MODELS).map(([key,m])=>`<button class="model-btn" data-model="${key}">${m.title}<small>${m.desc}</small></button>`).join('')}</div></section>`;
@@ -787,4 +854,4 @@ document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>{ tab=b
 document.getElementById('homeBrand').onclick = goHome;
 document.querySelectorAll('.bottom-nav button').forEach(x=>x.classList.toggle('active',x===b)); render(); });
 setInterval(()=>{ if(state.profile && tab==='home'){ const el=document.getElementById('clockNow'); if(el) el.textContent=hm(nowSP()); } },1000);
-render();
+initFirebaseAuth().finally(render);
