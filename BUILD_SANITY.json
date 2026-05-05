@@ -1,6 +1,7 @@
 {
   "version": true,
-  "badge_version": true,
-  "css_overflow_fix": true,
-  "css_mobile_breakpoints": true
+  "registerView": true,
+  "toast": true,
+  "noHomeDuplicatePhoto": true,
+  "monthReordered": true
 }

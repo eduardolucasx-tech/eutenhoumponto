@@ -1,3 +1,28 @@
+Eu tenho um ponto. — Release v1.3.2
+
+Build atual: v1.3.2
+
+================================================================================
+ATUALIZAÇÃO v1.3.2 — Polimento de visual e fluxo
+================================================================================
+
+Aplicado nesta versão:
+- remoção da foto redundante ao lado da saudação na Home;
+- toast/snackbar no lugar dos alerts principais;
+- Home mais limpa, com indicador de sincronização;
+- aba Registrar com alternância entre Manual e Importar;
+- formulário manual adaptado ao modelo ativo;
+- aba Mês reorganizada em ordem mais executiva;
+- Perfil reorganizado em blocos: Conta, Jornada e Dados;
+- ajustes visuais finos para leitura e fluxo.
+
+Validação sugerida:
+1. Home: verificar saudação sem foto repetida.
+2. Registrar: alternar Manual/Importar.
+3. Mês: conferir nova ordem de blocos.
+4. Perfil: testar salvar, sincronizar e desconectar.
+5. Toasts: testar batida, salvar manual e sincronizar.
+
 Eu tenho um ponto. — Release v1.3.1
 
 Build atual: v1.3.1

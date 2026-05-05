@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.1';
+const APP_VERSION = 'v1.3.2';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -184,13 +184,13 @@ async function pushStateToCloud(immediate=false){
 async function loginWithGoogle(){
   const ok = await initFirebaseAuth();
   if(!ok){
-    alert("Firebase ainda não iniciou. Confira firebase-config.js, domínio autorizado e Authentication > Google.");
+    showToast('Firebase ainda não iniciou. Confira a configuração e os domínios autorizados.', 'danger');
     return;
   }
   try{
     await firebaseFns.signInWithPopup(firebaseAuth, firebaseProvider);
   }catch(err){
-    alert("Não foi possível entrar com Google: " + (err?.message || err));
+    showToast('Não foi possível entrar com Google.', 'danger');
   }
 }
 
@@ -221,9 +221,43 @@ function renderFallback(message='Não consegui carregar esta tela.'){
   }
 }
 
+
+function ensureToastHost(){
+  let host = document.getElementById('toastHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'toastHost';
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  return host;
+}
+function showToast(message, type='info'){
+  const host = ensureToastHost();
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  host.appendChild(toast);
+  requestAnimationFrame(()=> toast.classList.add('show'));
+  const remove = () => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 220);
+  };
+  setTimeout(remove, 2600);
+  toast.addEventListener('click', remove);
+}
+function syncStatusLabel(){
+  if(!state.user) return 'Sem conta conectada';
+  return cloudReady ? 'Sincronizado com a nuvem' : 'Salvando localmente';
+}
+function syncStatusClass(){
+  return cloudReady ? 'ok' : 'warn';
+}
+
 let state = load();
 let tab = 'home';
 let selectedMonthValue = null;
+let registerView = 'manual';
 const screenEl = document.getElementById('screen');
 function load(){
   const fresh = { user:null, profile:null, days:{}, imports:[], officialBank:{} };
@@ -285,9 +319,13 @@ function displayPunchTime(punches, index){
 }
 function undoLastPunch(date=activeWorkDate()){
   const d = state.days[date];
-  if(!d || !d.punches || !d.punches.length) return;
-  d.punches.pop();
+  if(!d || !d.punches || !d.punches.length){
+    showToast('Não há batidas para remover.', 'warn');
+    return;
+  }
+  const removed = d.punches.pop();
   save();
+  showToast(`Última batida removida: ${removed?.time || '--:--'}.`, 'warn');
 }
 function targetDateForImportedPunch(foundDate, foundTime){
   const mins = parseHM(foundTime);
@@ -559,8 +597,14 @@ Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado
 }
 function addPunch(date, time, source='manual'){
   const d = day(date);
-  if(!d.punches.find(p=>p.time===time)) d.punches.push({time, source, createdAt:new Date().toISOString()});
+  if(d.punches.find(p=>p.time===time)){
+    showToast('Essa marcação já existe neste dia.', 'warn');
+    return;
+  }
+  d.punches.push({time, source, createdAt:new Date().toISOString()});
   save();
+  const idx = d.punches.length - 1;
+  showToast(`${labelForIndex(Math.min(idx, requiredPunches()-1))} registrada às ${time}.`, 'ok');
 }
 function labelForIndex(i){ return model()?.punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'][i] : ['Entrada','Saída almoço','Volta almoço','Saída'][i]; }
 function punchCards(dayObj){
@@ -670,10 +714,30 @@ function renderHome(){
   const activeLabel = date !== iso(n) ? 'Jornada em andamento' : 'Hoje';
   const protection = overdue ? `<section class="card warning-card"><h2 class="section-title">Jornada aberta</h2><p>Existe uma jornada aberta há ${fmtMin(openMins)}. Confira antes de continuar.</p><div class="actions"><button class="secondary" id="finishOpenBtn">Concluir agora</button><button class="secondary danger-text" id="undoOpenBtn">Limpar última batida</button></div></section>` : '';
   const undoButton = (d.punches||[]).length ? `<button class="secondary full" id="undoLastBtn">Limpar última batida</button>` : '';
-  screenEl.innerHTML = `<section class="card home-profile"><div class="hello"><small>Olá, ${userFirstName()}</small><strong>Vamos registrar seu ponto?</strong><p class="tagline">${model().title}</p></div><button class="profile-photo" id="homeProfileBtn" aria-label="Abrir perfil">${userPhotoHtml('large')}</button></section>${protection}<section class="card soft center"><div class="date-line">${activeLabel} · ${pad(baseDate.getDate())} de ${monthNames[baseDate.getMonth()]} de ${baseDate.getFullYear()} · ${weekFull[baseDate.getDay()]}</div><div class="clock" id="clockNow">${hm(n)}</div><button class="cta" id="beatBtn">BATER PONTO</button><div class="status-line" id="homeStatus">${homeStatusLine(d)}</div>${undoButton}</section>
+  const ySaldo = workedMinutes(yd)-expectedMinutes(yIso);
+  const ySummary = yd.punches?.length
+    ? `<div class="history-mini"><span>${displayPunchTime(yd.punches,0)} → ${displayPunchTime(yd.punches, yd.punches.length-1)}</span><strong class="${ySaldo<0?'danger':'ok'}">${fmtMin(ySaldo)}</strong></div>`
+    : `<div class="empty-state compact">Nenhuma marcação registrada no dia anterior.</div>`;
+  screenEl.innerHTML = `
+  <section class="card home-profile slim">
+    <div class="hello">
+      <small>Olá, ${userFirstName()}</small>
+      <strong>Vamos registrar seu ponto?</strong>
+      <p class="tagline">${model().title}</p>
+    </div>
+    <div class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</div>
+  </section>
+  ${protection}
+  <section class="card soft center hero-card">
+    <div class="date-line">${activeLabel} · ${pad(baseDate.getDate())} de ${monthNames[baseDate.getMonth()]} de ${baseDate.getFullYear()} · ${weekFull[baseDate.getDay()]}</div>
+    <div class="clock" id="clockNow">${hm(n)}</div>
+    <button class="cta" id="beatBtn">BATER PONTO</button>
+    <div class="status-line ${st.cls==='danger'?'danger-tone':st.cls==='ok'?'ok-tone':''}" id="homeStatus">${homeStatusLine(d)}</div>
+    ${undoButton}
+  </section>
   <section class="card"><h2 class="section-title">Batidas de hoje</h2>${punchCards(d)}</section>
-  <section class="card soft"><h2 class="section-title">Resumo do dia</h2><div class="row"><span>Esperado</span><b>${fmtMin(exp)}</b></div><div class="row"><span>Trabalhado até agora</span><b>${fmtMin(worked)}</b></div><div class="row"><span>Saldo parcial</span><b class="${saldo<0?'danger':'ok'}">${fmtMin(saldo)}</b></div><div class="row"><span>Status</span><b class="${st.cls}">${st.text}</b></div></section>
-  <section class="card"><h2 class="section-title">Histórico do dia anterior</h2><div class="row"><span>${brDate(yIso)} · ${weekShort[yesterday.getDay()].toUpperCase()}</span><b>${yd.punches?.length ? 'Registrado' : 'Sem registro'}</b></div><div class="row"><span>Entrada</span><b>${displayPunchTime(yd.punches||[],0)}</b></div><div class="row"><span>Saída</span><b>${yd.punches?.length ? displayPunchTime(yd.punches, yd.punches.length-1) : '--:--'}</b></div><div class="row"><span>Saldo</span><b class="${workedMinutes(yd)-expectedMinutes(yIso)<0?'danger':'ok'}">${fmtMin(workedMinutes(yd)-expectedMinutes(yIso))}</b></div></section>`;
+  <section class="card soft"><h2 class="section-title">Resumo do dia</h2><div class="kpi-strip two"><div class="kpi-mini"><span>Esperado</span><strong>${fmtMin(exp)}</strong></div><div class="kpi-mini"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong></div><div class="kpi-mini"><span>Saldo parcial</span><strong class="${saldo<0?'danger':'ok'}">${fmtMin(saldo)}</strong></div><div class="kpi-mini"><span>Status</span><strong class="${st.cls}">${st.text}</strong></div></div></section>
+  <section class="card"><h2 class="section-title">Histórico do dia anterior</h2><div class="row"><span>${brDate(yIso)} · ${weekShort[yesterday.getDay()].toUpperCase()}</span><b>${yd.punches?.length ? 'Registrado' : 'Sem registro'}</b></div>${ySummary}</section>`;
   beatBtn.onclick = () => { addPunch(activeWorkDate(), hm(nowSP()), 'button'); };
   const undoBtn = document.getElementById('undoLastBtn');
   if(undoBtn) undoBtn.onclick = () => undoLastPunch(date);
@@ -681,8 +745,8 @@ function renderHome(){
   if(finishBtn) finishBtn.onclick = () => addPunch(date, hm(nowSP()), 'button');
   const undoOpenBtn = document.getElementById('undoOpenBtn');
   if(undoOpenBtn) undoOpenBtn.onclick = () => undoLastPunch(date);
-  homeProfileBtn.onclick = goProfile;
 }
+
 
 function brToIso(dateBr){
   const [dd,mm,yyyy] = dateBr.split('/');
@@ -864,60 +928,98 @@ async function extractPdfText(file){
 }
 
 function renderRegister(){
-  const date = iso(nowSP()); const d = day(date);
-  const fields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
-  screenEl.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Use quando esquecer de bater ponto ou precisar corrigir uma marcação.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${d.note||''}</textarea><button class="primary" style="width:100%;margin-top:14px" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button></section>
-  <section class="card"><h2>Importar comprovante</h2><p class="muted">Cole o texto do e-mail, comprovante digital ou papel. O app procura DATA e HORA e adiciona a marcação ao dia correto.</p><label>Texto do comprovante</label><textarea id="rawImport" rows="5" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary" style="width:100%;margin-top:12px" id="parseText">Ler DATA e HORA</button><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted">A leitura de imagem/OCR será ligada na versão Firebase com processamento em nuvem.</p></section><section class="card"><h2>Importar espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna. Ele importa as batidas e usa o bloco oficial Banco de Horas como referência principal do saldo.</p><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou cole o texto extraído do PDF</label><textarea id="rawEspelho" rows="6" placeholder="Cole aqui o texto do espelho mensal, se o leitor de PDF não carregar."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section><section class="card hidden" id="foundBox"></section><section class="card hidden" id="espelhoBox"></section>`;
-  const draw = () => { const dd = state.days[regDate.value] || {punches:[]}; regFields.innerHTML = fields.map((f,i)=>`<label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}">`).join(''); note.value = dd.note || ''; };
-  regDate.onchange = draw; draw();
-  const bindSelectedFile = (inputEl, boxEl, nameEl) => {
-    if(!inputEl || !boxEl || !nameEl) return;
-    const refresh = () => {
-      const file = inputEl.files?.[0];
-      if(file){
-        nameEl.textContent = file.name;
-        boxEl.classList.remove('hidden');
-      } else {
-        nameEl.textContent = '';
-        boxEl.classList.add('hidden');
+  const date = iso(nowSP());
+  const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
+  screenEl.innerHTML = `
+  <section class="card">
+    <div class="section-head">
+      <div><h2>Registrar</h2><p class="muted">Escolha entre lançar manualmente ou importar um comprovante/espelho.</p></div>
+    </div>
+    <div class="segmented" id="registerSegment">
+      <button class="${registerView==='manual'?'active':''}" data-view="manual">Manual</button>
+      <button class="${registerView==='import'?'active':''}" data-view="import">Importar</button>
+    </div>
+  </section>
+  <div id="registerBody"></div>`;
+
+  const renderManual = () => {
+    const d = state.days[date] || { punches:[], note:'' };
+    const body = document.getElementById('registerBody');
+    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${d.note||''}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
+    const draw = () => {
+      const dd = state.days[regDate.value] || {punches:[]};
+      regFields.innerHTML = manualFields.map((f,i)=>`<label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}" placeholder="HH:MM">`).join('');
+      note.value = dd.note || '';
+    };
+    regDate.onchange = draw;
+    draw();
+    saveReg.onclick = () => {
+      const dd = day(regDate.value);
+      dd.punches = [...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean).map(t=>({time:t,source:'typed'}));
+      dd.note = note.value;
+      save();
+      showToast('Marcações manuais salvas.', 'ok');
+      tab='home';
+      render();
+    };
+    undoRegBtn.onclick = () => undoLastPunch(regDate.value);
+  };
+
+  const renderImportView = () => {
+    const body = document.getElementById('registerBody');
+    body.innerHTML = `
+    <section class="card"><h2>Importar comprovante</h2><p class="muted">Cole o texto do e-mail, comprovante digital ou papel. O app procura DATA e HORA e adiciona a marcação ao dia correto.</p><label>Texto do comprovante</label><textarea id="rawImport" rows="5" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted">A leitura de imagem/OCR será ligada na versão Firebase com processamento em nuvem.</p></section>
+    <section class="card"><h2>Importar espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna. Ele importa as batidas e usa o bloco oficial Banco de Horas como referência principal do saldo.</p><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou cole o texto extraído do PDF</label><textarea id="rawEspelho" rows="6" placeholder="Cole aqui o texto do espelho mensal, se o leitor de PDF não carregar."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>
+    <section class="card subtle-card"><div class="empty-state compact"><strong>Importação inteligente</strong><span>Comprovantes adicionam batidas individuais. O espelho oficial também atualiza a referência do banco de horas do mês.</span></div></section>
+    <section class="card hidden" id="foundBox"></section><section class="card hidden" id="espelhoBox"></section>`;
+
+    const bindSelectedFile = (inputEl, boxEl, nameEl) => {
+      if(!inputEl || !boxEl || !nameEl) return;
+      const refresh = () => {
+        const file = inputEl.files?.[0];
+        if(file){ nameEl.textContent = file.name; boxEl.classList.remove('hidden'); }
+        else { nameEl.textContent = ''; boxEl.classList.add('hidden'); }
+      };
+      inputEl.addEventListener('change', refresh);
+      refresh();
+    };
+    bindSelectedFile(document.getElementById('proofImage'), document.getElementById('proofImageSelected'), document.getElementById('proofImageName'));
+    bindSelectedFile(document.getElementById('pdfEspelho'), document.getElementById('pdfEspelhoSelected'), document.getElementById('pdfEspelhoName'));
+
+    parseText.onclick = () => {
+      const text = rawImport.value;
+      const m1 = text.match(/DATA[:\s]*(\d{2}\/\d{2}\/\d{4})[\s\S]*?HORA[:\s]*(\d{2}:\d{2})/i) || text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})/);
+      if(!m1){ foundBox.className='card'; foundBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
+      const [dd,mm,yyyy] = m1[1].split('/'); const foundDate = `${yyyy}-${mm}-${dd}`; const foundTime = m1[2];
+      const targetDate = targetDateForImportedPunch(foundDate, foundTime);
+      const extra = targetDate !== foundDate ? `<div class="row"><span>Salvar em</span><b>${brDate(targetDate)}</b></div><p class="muted">Marcação de madrugada vinculada à jornada aberta do dia anterior.</p>` : '';
+      foundBox.className='card'; foundBox.innerHTML = `<h2>Marcação encontrada</h2><div class="row"><span>Data do comprovante</span><b>${brDate(foundDate)}</b></div><div class="row"><span>Hora</span><b>${foundTime}</b></div>${extra}<button class="primary full" id="confirmImport">Adicionar marcação</button>`;
+      confirmImport.onclick = () => { addPunch(targetDate,foundTime,'import_text'); tab='home'; render(); };
+    };
+    const handleParsedEspelho = (parsed) => {
+      if(!parsed.rows.length){ espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não encontrei linhas diárias no padrão do espelho.</p>'; return; }
+      espelhoBox.className='card'; espelhoBox.innerHTML = previewEspelhoImport(parsed);
+      confirmPdfImport.onclick = () => { applyEspelhoImport(parsed); showToast('Espelho importado com sucesso.', 'ok'); tab='month'; render(); };
+    };
+    parseEspelhoTextBtn.onclick = () => handleParsedEspelho(parseEspelhoPontoText(rawEspelho.value));
+    readPdfEspelho.onclick = async () => {
+      const file = pdfEspelho.files?.[0];
+      if(!file){ espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Selecione um PDF</h2><p class="muted">Escolha o arquivo do espelho de ponto.</p>'; return; }
+      espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Lendo PDF</h2><p class="muted">Aguarde...</p>';
+      try{
+        const text = await extractPdfText(file);
+        rawEspelho.value = text;
+        handleParsedEspelho(parseEspelhoPontoText(text));
+      }catch(e){
+        espelhoBox.className='card'; espelhoBox.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${e.message}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
       }
     };
-    inputEl.addEventListener('change', refresh);
-    refresh();
   };
-  bindSelectedFile(document.getElementById('proofImage'), document.getElementById('proofImageSelected'), document.getElementById('proofImageName'));
-  bindSelectedFile(document.getElementById('pdfEspelho'), document.getElementById('pdfEspelhoSelected'), document.getElementById('pdfEspelhoName'));
-  saveReg.onclick = () => { const dd = day(regDate.value); dd.punches = [...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean).map(t=>({time:t,source:'typed'})); dd.note = note.value; save(); tab='home'; render(); };
-  parseText.onclick = () => {
-    const text = rawImport.value;
-    const m1 = text.match(/DATA[:\s]*(\d{2}\/\d{2}\/\d{4})[\s\S]*?HORA[:\s]*(\d{2}:\d{2})/i) || text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})/);
-    if(!m1){ foundBox.className='card'; foundBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
-    const [dd,mm,yyyy] = m1[1].split('/'); const foundDate = `${yyyy}-${mm}-${dd}`; const foundTime = m1[2];
-    const targetDate = targetDateForImportedPunch(foundDate, foundTime);
-    const extra = targetDate !== foundDate ? `<div class="row"><span>Salvar em</span><b>${brDate(targetDate)}</b></div><p class="muted">Marcação de madrugada vinculada à jornada aberta do dia anterior.</p>` : '';
-    foundBox.className='card'; foundBox.innerHTML = `<h2>Marcação encontrada</h2><div class="row"><span>Data do comprovante</span><b>${brDate(foundDate)}</b></div><div class="row"><span>Hora</span><b>${foundTime}</b></div>${extra}<button class="primary" style="width:100%;margin-top:12px" id="confirmImport">Adicionar marcação</button>`;
-    confirmImport.onclick = () => { addPunch(targetDate,foundTime,'import_text'); tab='home'; render(); };
-  };
-  const handleParsedEspelho = (parsed) => {
-    if(!parsed.rows.length){ espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não encontrei linhas diárias no padrão do espelho.</p>'; return; }
-    espelhoBox.className='card'; espelhoBox.innerHTML = previewEspelhoImport(parsed);
-    confirmPdfImport.onclick = () => { applyEspelhoImport(parsed); tab='month'; render(); };
-  };
-  parseEspelhoTextBtn.onclick = () => handleParsedEspelho(parseEspelhoPontoText(rawEspelho.value));
-  readPdfEspelho.onclick = async () => {
-    const file = pdfEspelho.files?.[0];
-    if(!file){ espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Selecione um PDF</h2><p class="muted">Escolha o arquivo do espelho de ponto.</p>'; return; }
-    espelhoBox.className='card'; espelhoBox.innerHTML='<h2>Lendo PDF</h2><p class="muted">Aguarde...</p>';
-    try{
-      const text = await extractPdfText(file);
-      rawEspelho.value = text;
-      handleParsedEspelho(parseEspelhoPontoText(text));
-    }catch(e){
-      espelhoBox.className='card'; espelhoBox.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${e.message}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
-    }
-  };
-  undoRegBtn.onclick = () => undoLastPunch(regDate.value);
+
+  document.querySelectorAll('#registerSegment button').forEach(btn => btn.onclick = () => { registerView = btn.dataset.view; renderRegister(); });
+  if(registerView === 'manual') renderManual(); else renderImportView();
 }
+
 
 function renderMonth(){
   const n = nowSP();
@@ -928,44 +1030,38 @@ function renderMonth(){
   const month = Number(monthStr) - 1;
   const st = monthStats(year, month);
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
-  const bancoFonte = st.officialBank ? 'Banco oficial importado' : 'Banco estimado pelo app';
+  const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
   const rowsHtml = st.rows.map(r=>{
-    const p = r.punches || [];
-    const warn = r.pastOrToday && isPending({date:r.date,punches:p}) ? '<span class="alert">!</span>' : `<span class="bal ${r.saldo<0?'neg':r.saldo>0?'pos':''}">${fmtMin(r.saldo)}</span>`;
-    return `<div class="day-item"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>${warn}</div><div class="day-sub">Entrada: ${displayPunchTime(p,0)} · Saída: ${p.length ? displayPunchTime(p,p.length-1) : '--:--'} · Saldo: ${fmtMin(r.saldo)} · <span class="${r.status.cls}">${r.status.text}</span>${r.holiday?' · Feriado':''}</div></div>`;
+    const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
+    const short = p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro');
+    return `<div class="day-item"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]}) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.saldo<0?'neg':r.saldo>0?'pos':''}">${fmtMin(r.saldo)}</span></div></div><div class="day-sub">${short}</div></div>`;
   }).join('');
-  const issues = st.issues.slice(0,6).map(x=>`<li>${x}</li>`).join('');
   const bankBody = st.officialBank ?
-    `<div class="row"><span>Fonte</span><b>Oficial importado</b></div>
-     <div class="row"><span>Período</span><b>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</b></div>
-     <div class="row"><span>Último mês oficial</span><b>${st.officialBank.key.split('-').reverse().join('/')}</b></div>
-     <div class="row"><span>Saldo oficial importado</span><b class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</b></div>
-     <div class="row"><span>Movimentação após oficial</span><b class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</b></div>
-     <div class="row"><span>Saldo projetado do ciclo</span><b class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</b></div>` :
-    `<div class="row"><span>Fonte</span><b>Estimativa do app</b></div>
-     <div class="row"><span>Período</span><b>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</b></div>
-     <div class="row"><span>Saldo inicial</span><b>${fmtMin(Number(state.profile.bankStart)||0)}</b></div>
-     <div class="row"><span>Débito estimado do mês</span><b class="danger">${fmtMin(st.monthDebit)}</b></div>
-     <div class="row"><span>Crédito estimado do mês</span><b class="ok">${fmtMin(st.monthCredit)}</b></div>
-     <div class="row"><span>Saldo estimado do ciclo</span><b class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</b></div>`;
-  screenEl.innerHTML = `<section class="card"><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><h2 class="section-title" style="margin-top:16px">Resumo</h2><div class="month-grid"><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div></div></section>
-  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${bancoFonte}. Quando houver espelho oficial importado, ele tem prioridade sobre a estimativa pelas batidas.</p>${bankBody}</section>
-  <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta prévia, o botão prepara arquivo/relatório para colar ou importar.</p></section>
-  <section class="card"><h2 class="section-title">Conferência inteligente</h2>${st.issues.length ? `<ul class="issues">${issues}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>'}</section>
-  <section class="card"><h2 class="section-title">Registro mensal</h2>${rowsHtml}</section>`;
+    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
+    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
+  const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
+  const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
+  screenEl.innerHTML = `
+  <section class="card"><div class="section-head"><div><h2>Mês</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
+  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>
+  <section class="card"><h2 class="section-title">Registro mensal</h2>${emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml}</section>
+  <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
+  <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;
   monthPicker.onchange = () => { selectedMonthValue = monthPicker.value; renderMonth(); };
-  csvBtn.onclick = ()=>exportMonthCsv(year,month);
-  excelBtn.onclick = ()=>exportMonthExcel(year,month);
+  csvBtn.onclick = ()=>{ exportMonthCsv(year,month); showToast('CSV exportado.', 'ok'); };
+  excelBtn.onclick = ()=>{ exportMonthExcel(year,month); showToast('Arquivo Excel exportado.', 'ok'); };
   copyReportBtn.onclick = async ()=>{
     const txt = reportText(year,month);
-    try { await navigator.clipboard.writeText(txt); alert('Relatório copiado.'); }
-    catch(e){ downloadBlob(`relatorio_${year}_${pad(month+1)}.txt`, txt, 'text/plain;charset=utf-8'); }
+    try { await navigator.clipboard.writeText(txt); showToast('Relatório copiado.', 'ok'); }
+    catch(e){ downloadBlob(`relatorio_${year}_${pad(month+1)}.txt`, txt, 'text/plain;charset=utf-8'); showToast('Relatório gerado em arquivo.', 'ok'); }
   };
   sheetsBtn.onclick = ()=>{
     exportMonthCsv(year,month);
-    alert('CSV gerado. No Google Sheets, use Arquivo > Importar > Upload. Na versão Firebase, este botão enviará direto para sua planilha.');
+    showToast('CSV gerado para importação no Google Sheets.', 'ok');
   };
 }
+
+
 function renderImport(){
   screenEl.innerHTML = `<section class="card"><h2>Importar marcação</h2><p class="muted">Prévia do fluxo para comprovante TOTVS/Carol, print de e-mail ou foto do papel. Na versão Firebase, a imagem vai para Storage e uma Cloud Function chama OCR em nuvem.</p><label>Colar texto do comprovante</label><textarea id="rawImport" rows="6" placeholder="Cole aqui o texto do e-mail/comprovante. Ex: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="primary" style="width:100%;margin-top:12px" id="parseText">Ler DATA e HORA</button><label>Ou selecionar imagem</label><input class="input" type="file" accept="image/*"><p class="muted">Nesta prévia, imagem fica como fluxo visual. OCR real entra na v2 Firebase.</p></section><section class="card hidden" id="foundBox"></section>`;
   parseText.onclick = () => {
@@ -984,28 +1080,10 @@ function renderProfileScreen(){
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
-  screenEl.innerHTML = `<section class="card">
-    <div class="profile-card">
-      <div class="profile-photo">${userPhotoHtml('large')}</div>
-      <div>
-        <h2 style="margin:0">Perfil e Configurações</h2>
-        <p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p>
-        <p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p>
-      </div>
-    </div>
-    <label>Modelo</label>
-    <select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select>
-    <label>Cidade</label>
-    <select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select>
-    <label>Saldo inicial do ciclo</label>
-    <input id="cfgBank" class="input" type="text" value="${currentBank}">
-    <div id="scaleWrap"></div>
-    <div class="actions" style="margin-top:14px"><button class="secondary" id="reset">Resetar</button><button class="primary" id="saveCfg">Salvar</button></div>
-    <button class="secondary full" id="syncNow" style="margin-top:10px">Sincronizar agora</button>
-    <button class="secondary full" id="disconnectGoogle" style="margin-top:10px">Desconectar conta Google</button>
-    <p class="muted" style="margin-top:12px">Sincronização: ${cloudReady ? 'nuvem ativa' : 'local / aguardando nuvem'}.</p>
-    <p class="muted">Os dados ficam em users/{uid}/profile/main e cada usuário acessa só a própria conta.</p>
-  </section>`;
+  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div><button class="secondary full" id="syncNow">Sincronizar agora</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
+  <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
+  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Use o reset apenas se quiser limpar completamente os dados salvos neste navegador.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
 
   const cfgModelEl = document.getElementById('cfgModel');
   const cfgCityEl = document.getElementById('cfgCity');
@@ -1039,20 +1117,23 @@ function renderProfileScreen(){
       if(scaleInput) state.profile.scaleStartDate = scaleInput.value;
     }
     save();
+    showToast('Configurações salvas.', 'ok');
   };
 
   document.getElementById('syncNow').onclick = async () => {
     await pushStateToCloud(true);
-    alert(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização. Confira o Firestore e as regras.');
+    showToast(cloudReady ? 'Dados sincronizados com a nuvem.' : 'Não foi possível confirmar a sincronização.', cloudReady ? 'ok' : 'warn');
     renderProfileScreen();
   };
 
   document.getElementById('disconnectGoogle').onclick = () => {
     if(confirm('Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
       logoutGoogle();
+      showToast('Conta Google desconectada.', 'warn');
     }
   };
 }
+
 
 function renderConfig(){
   return renderProfileScreen();
