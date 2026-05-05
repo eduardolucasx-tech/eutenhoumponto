@@ -1,7 +1,7 @@
 {
-  "version": true,
-  "renderFallback": true,
-  "render_try": true,
-  "renderLogin": true,
-  "renderModelChoice": true
+  "firebaseReady_decl": 1,
+  "cloudReady_decl": 1,
+  "appVersion": true,
+  "has_renderFallback": true,
+  "no_export_top": true
 }

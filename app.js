@@ -1,7 +1,20 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.2.7';
+const APP_VERSION = 'v1.2.8';
 
 
+
+
+
+var firebaseReady = false;
+var firebaseAuth = null;
+var firebaseProvider = null;
+var firebaseFns = null;
+var firebaseDb = null;
+var firestoreFns = null;
+var firebaseAuthWarning = "";
+var cloudReady = false;
+var cloudSyncTimer = null;
+var cloudHydrating = false;
 
 window.addEventListener('error', (event) => {
   console.error('Erro global capturado:', event.error || event.message);
@@ -28,15 +41,6 @@ function renderFallback(message='Não consegui carregar esta tela.'){
   }
 }
 
-var firebaseReady = false;
-var firebaseAuth = null;
-var firebaseProvider = null;
-var firebaseFns = null;
-var firebaseDb = null;
-var firestoreFns = null;
-var cloudReady = false;
-var cloudSyncTimer = null;
-var cloudHydrating = false;
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -85,13 +89,6 @@ function isHoliday(date, city='Santos'){
   if(city === 'Praia Grande') base.push(...HOLIDAYS_2026.praiaGrande);
   return base.includes(date);
 }
-
-
-let firebaseReady = false;
-let firebaseAuth = null;
-let firebaseProvider = null;
-let firebaseFns = null;
-let firebaseAuthWarning = "";
 
 function hasRealFirebaseConfig(){
   const cfg = window.FIREBASE_CONFIG || {};
@@ -1028,6 +1025,7 @@ function renderProfileScreen(){
 function renderConfig(){
   return renderProfileScreen();
 }
+
 
 
 

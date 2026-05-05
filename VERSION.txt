@@ -1,2 +1,2 @@
-v1.2.7
-Build: Safe Render
+v1.2.8
+Build: Fix Firebase duplicado

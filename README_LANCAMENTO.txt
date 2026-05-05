@@ -1,3 +1,26 @@
+Eu tenho um ponto. — Release v1.2.8
+
+Build atual: v1.2.8
+
+
+================================================================================
+ATUALIZAÇÃO v1.2.8 — Fix Firebase duplicado / tela vazia
+================================================================================
+
+Correções:
+- Removidas declarações duplicadas de firebaseReady e variáveis relacionadas.
+- Corrigido erro: Identifier 'firebaseReady' has already been declared.
+- Mantido render seguro para impedir tela vazia.
+- Mantido login Google/Firebase e Firestore Sync.
+- Topo atualizado para v1.2.8.
+
+Como validar:
+1. Conferir topo: v1.2.8.
+2. Abrir console e confirmar que não aparece firebaseReady duplicado.
+3. A tela deve renderizar Login, Escolha de modelo ou Home.
+4. Testar Perfil.
+
+
 Eu tenho um ponto. — Release v1.2.7
 
 Build atual: v1.2.7
