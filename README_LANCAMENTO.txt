@@ -1,4 +1,4 @@
-Eu tenho um ponto. — Release v1.0.1
+Eu tenho um ponto. — Release v1.1.1
 
 Base: v3.3 refinada
 Nome e logo mantidos.
@@ -31,3 +31,6 @@ Atualização v1.1:
 - Incluído arquivo firebase-config.js para colar a configuração do Firebase.
 - Botão Desconectar conta Google agora chama logout quando Firebase estiver configurado.
 - Os dados locais de ponto continuam preservados ao desconectar.
+
+Atualização v1.1.1:
+- firebase-config.js preenchido com o projeto eutenhoumponto-ce487.

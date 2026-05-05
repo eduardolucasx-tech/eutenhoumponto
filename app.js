@@ -496,7 +496,7 @@ function goProfile(){
 }
 
 function render(){
-  document.getElementById('modelBadge').textContent = state.profile ? model().title : 'Versão 1.1';
+  document.getElementById('modelBadge').textContent = state.profile ? model().title : 'Versão 1.1.1';
   renderHeaderProfile();
   document.getElementById('bottomNav').classList.toggle('hidden', !state.profile);
   if(!state.user) return renderLogin();
