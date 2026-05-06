@@ -3,7 +3,7 @@ function safeMinutes(value){
   return Number.isFinite(n) ? n : 0;
 }
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.12';
+const APP_VERSION = 'v1.3.13';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -13,7 +13,8 @@ const weekFull = ['domingo','segunda-feira','terça-feira','quarta-feira','quint
 const weekShort = ['dom','seg','ter','qua','qui','sex','sáb'];
 const monthNames = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const parseHM = t => { if(!t) return null; const [h,m] = t.split(':').map(Number); return h*60+m; };
-const fmtMin = mins => { const sign = mins < 0 ? '-' : ''; mins = Math.abs(Math.round(mins)); return `${sign}${pad(Math.floor(mins/60))}:${pad(mins%60)}`; };
+const fmtMin = mins => { mins = safeMinutes(mins); const sign = mins < 0 ? '-' : ''; mins = Math.abs(Math.round(mins)); return `${sign}${pad(Math.floor(mins/60))}:${pad(mins%60)}`; };
+const fmtSafeBank = mins => fmtMin(safeMinutes(mins));
 const dateObj = isoDate => { const [y,m,d] = isoDate.split('-').map(Number); return new Date(y, m-1, d); };
 
 const MODELS = {
@@ -527,11 +528,9 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
 }
 
 function cycleAppCalculatedTotal(cycle, selectedYear, selectedMonth){
-  // Saldo calculado pelo app sem usar espelho oficial como base.
-  // Usa apenas saldo inicial configurado + batidas/ausências registradas.
   const initial = safeMinutes(state.profile?.bankStart);
   const calculated = safeMinutes(cycleConfirmedSaldo(cycle, selectedYear, selectedMonth));
-  return initial + calculated;
+  return safeMinutes(initial + calculated);
 }
 
 function monthStats(year, month){
@@ -1129,6 +1128,9 @@ function renderMonth(){
   const year = Number(yearStr);
   const month = Number(monthStr) - 1;
   const st = monthStats(year, month);
+  st.cycleAppTotal = safeMinutes(st.cycleAppTotal);
+  st.cycleTotal = safeMinutes(st.cycleTotal);
+  st.cycleSaldo = safeMinutes(st.cycleSaldo);
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
   const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
   const rowsHtml = st.rows.map(r=>{
@@ -1152,7 +1154,7 @@ function renderMonth(){
       <div class="kpi-mini"><span>Saldo inicial configurado</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div>
       <div class="kpi-mini"><span>Débito calculado no mês</span><strong class="danger">${fmtMin(st.debitEstimated)}</strong></div>
       <div class="kpi-mini"><span>Crédito calculado no mês</span><strong class="ok">${fmtMin(st.creditEstimated)}</strong></div>
-      <div class="kpi-mini"><span>Total calculado pelo app</span><strong class="${st.cycleAppTotal<0?'danger':'ok'}">${fmtMin(st.cycleAppTotal)}</strong></div>
+      <div class="kpi-mini"><span>Total calculado pelo app</span><strong class="${safeMinutes(st.cycleAppTotal)<0?'danger':'ok'}">${fmtSafeBank(st.cycleAppTotal)}</strong></div>
     </div>`;
 
   const bankBody = `<div class="bank-dual">

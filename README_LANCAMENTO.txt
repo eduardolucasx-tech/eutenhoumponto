@@ -1,3 +1,24 @@
+Eu tenho um ponto. — Release v1.3.13
+
+Build atual: v1.3.13
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.13 — Fix definitivo de render NaN
+================================================================================
+
+Correção:
+- O formatador de horas ainda era uma função curta que não limpava NaN.
+- fmtMin agora converte qualquer valor inválido para 00:00.
+- Total calculado pelo app agora usa fmtSafeBank().
+- renderMonth normaliza cycleAppTotal/cycleTotal/cycleSaldo antes de exibir.
+
+Validação:
+1. Abrir Mês > Banco do ciclo.
+2. Conferir "Total calculado pelo app".
+3. O campo deve mostrar 00:00 ou um saldo válido, nunca NaN:NaN.
+
+
 Eu tenho um ponto. — Release v1.3.12
 
 Build atual: v1.3.12

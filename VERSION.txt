@@ -1,2 +1,2 @@
-v1.3.12
-Build: Fix NaN banco calculado
+v1.3.13
+Build: Fix definitivo de render NaN

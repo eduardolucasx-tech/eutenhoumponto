@@ -1,7 +1,7 @@
 {
   "version": true,
-  "safeMinutes": true,
-  "fmtMinSafe": false,
+  "fmtMinSafe": true,
+  "fmtSafeBank": true,
   "cycleAppSafe": true,
-  "nanTextNotInCode": true
+  "renderNormalize": true
 }
