@@ -514,3 +514,9 @@ textarea {
 .bank-block .muted {
   margin: 0 0 12px;
 }
+
+
+/* v1.3.14 — Banco calculado pelo ciclo real */
+.bank-block .kpi-strip .kpi-mini strong.warn {
+  color: var(--yellow);
+}

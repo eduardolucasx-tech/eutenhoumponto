@@ -3,7 +3,7 @@ function safeMinutes(value){
   return Number.isFinite(n) ? n : 0;
 }
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.13';
+const APP_VERSION = 'v1.3.14';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -527,10 +527,68 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   return saldo;
 }
 
-function cycleAppCalculatedTotal(cycle, selectedYear, selectedMonth){
+
+function endOfSelectedMonth(year, month){
+  return new Date(year, month + 1, 0);
+}
+
+function appCycleCalculatedStats(cycle, selectedYear, selectedMonth){
+  const today = dateObj(iso(nowSP()));
+  const selectedEnd = endOfSelectedMonth(selectedYear, selectedMonth);
+  const endLimit = selectedEnd < today ? selectedEnd : today;
+
+  let debit = 0;
+  let credit = 0;
+  let saldo = 0;
+  let consideredDays = 0;
+  let pendingDays = 0;
+  let absenceBanco = 0;
+  let absenceFalta = 0;
+  let absenceAtestado = 0;
+
+  for(let d = dateObj(cycle.start); d <= dateObj(cycle.end) && d <= endLimit; d.setDate(d.getDate()+1)){
+    const id = iso(d);
+    const obj = state.days[id] || { date:id, punches:[] };
+    const exp = safeMinutes(expectedMinutes(id));
+
+    // Dia sem carga prevista não entra no banco.
+    if(exp <= 0) continue;
+
+    const impact = estimatedBankImpact(obj);
+    const dayDebit = safeMinutes(impact.debit);
+    const dayCredit = safeMinutes(impact.credit);
+    const daySaldo = safeMinutes(impact.saldo);
+
+    debit += dayDebit;
+    credit += dayCredit;
+    saldo += daySaldo;
+    consideredDays++;
+
+    if(isPending(obj)) pendingDays++;
+    if(obj.absenceType === 'banco') absenceBanco++;
+    if(obj.absenceType === 'falta') absenceFalta++;
+    if(obj.absenceType === 'atestado') absenceAtestado++;
+  }
+
   const initial = safeMinutes(state.profile?.bankStart);
-  const calculated = safeMinutes(cycleConfirmedSaldo(cycle, selectedYear, selectedMonth));
-  return safeMinutes(initial + calculated);
+  const total = initial + saldo;
+
+  return {
+    initial,
+    debit:safeMinutes(debit),
+    credit:safeMinutes(credit),
+    saldo:safeMinutes(saldo),
+    total:safeMinutes(total),
+    consideredDays,
+    pendingDays,
+    absenceBanco,
+    absenceFalta,
+    absenceAtestado
+  };
+}
+
+function cycleAppCalculatedTotal(cycle, selectedYear, selectedMonth){
+  return appCycleCalculatedStats(cycle, selectedYear, selectedMonth).total;
 }
 
 function monthStats(year, month){
@@ -1152,14 +1210,16 @@ function renderMonth(){
   const appBankBody = `<div class="kpi-strip two">
       <div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div>
       <div class="kpi-mini"><span>Saldo inicial configurado</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div>
-      <div class="kpi-mini"><span>Débito calculado no mês</span><strong class="danger">${fmtMin(st.debitEstimated)}</strong></div>
-      <div class="kpi-mini"><span>Crédito calculado no mês</span><strong class="ok">${fmtMin(st.creditEstimated)}</strong></div>
+      <div class="kpi-mini"><span>Débito calculado no ciclo</span><strong class="danger">${fmtMin(st.appCycleStats?.debit)}</strong></div>
+      <div class="kpi-mini"><span>Crédito calculado no ciclo</span><strong class="ok">${fmtMin(st.appCycleStats?.credit)}</strong></div>
       <div class="kpi-mini"><span>Total calculado pelo app</span><strong class="${safeMinutes(st.cycleAppTotal)<0?'danger':'ok'}">${fmtSafeBank(st.cycleAppTotal)}</strong></div>
+      <div class="kpi-mini"><span>Dias considerados</span><strong>${st.appCycleStats?.consideredDays || 0}</strong></div>
+      <div class="kpi-mini"><span>Pendências</span><strong class="warn">${st.appCycleStats?.pendingDays || 0}</strong></div>
     </div>`;
 
   const bankBody = `<div class="bank-dual">
       <div class="bank-block"><h3>Saldo oficial</h3><p class="muted">${st.officialBank ? 'Usa o último espelho importado como base e soma apenas a movimentação posterior registrada no app.' : 'Nenhum espelho oficial importado para este ciclo.'}</p>${officialBankBody}</div>
-      <div class="bank-block"><h3>Saldo calculado pelo app</h3><p class="muted">Ignora o saldo oficial e recalcula o ciclo inteiro a partir das batidas, pendências, folgas banco, faltas e atestados salvos no app.</p>${appBankBody}</div>
+      <div class="bank-block"><h3>Saldo calculado pelo app</h3><p class="muted">Ignora o saldo oficial e recalcula o ciclo inteiro, do início do ciclo até hoje, a partir das batidas, pendências, folgas banco, faltas e atestados salvos no app.</p>${appBankBody}</div>
     </div>`;
   const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';

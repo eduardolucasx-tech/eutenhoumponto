@@ -1,3 +1,37 @@
+Eu tenho um ponto. — Release v1.3.14
+
+Build atual: v1.3.14
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.14 — Cálculo real do ciclo pelo app
+================================================================================
+
+Correção:
+- O "Saldo calculado pelo app" ainda usava números parciais do mês em alguns campos,
+  por isso o débito ficava baixo demais.
+- Criado cálculo próprio do ciclo: appCycleCalculatedStats().
+- O app agora varre dia por dia do início do ciclo até hoje.
+- Cada dia útil com carga esperada entra no cálculo:
+  - batida completa = saldo real do dia;
+  - marcação pendente = débito da carga esperada;
+  - Folga banco = débito da carga esperada;
+  - Falta = débito da carga esperada;
+  - Atestado = impacto 0.
+- Dias futuros continuam fora do banco.
+- A tela agora mostra:
+  - Débito calculado no ciclo;
+  - Crédito calculado no ciclo;
+  - Total calculado pelo app;
+  - Dias considerados;
+  - Pendências.
+
+Validação:
+1. Abrir Mês > Banco do ciclo.
+2. Conferir Saldo calculado pelo app.
+3. Se existirem 4 dias de folga banco/falta, o débito deve refletir esses dias.
+
+
 Eu tenho um ponto. — Release v1.3.13
 
 Build atual: v1.3.13

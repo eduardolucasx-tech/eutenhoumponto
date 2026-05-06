@@ -1,7 +1,7 @@
 {
   "version": true,
-  "fmtMinSafe": true,
-  "fmtSafeBank": true,
-  "cycleAppSafe": true,
-  "renderNormalize": true
+  "appCycleStats": true,
+  "cycleDebitUi": true,
+  "daysConsidered": true,
+  "untilToday": true
 }

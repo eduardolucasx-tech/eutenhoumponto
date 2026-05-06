@@ -1,2 +1,2 @@
-v1.3.13
-Build: Fix definitivo de render NaN
+v1.3.14
+Build: Cálculo real do ciclo pelo app
