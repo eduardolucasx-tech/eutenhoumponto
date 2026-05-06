@@ -1,3 +1,29 @@
+Eu tenho um ponto. — Release v1.3.7
+
+Build atual: v1.3.7
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.7 — Débito pendente, ausências e sync reforçado
+================================================================================
+
+Correções e melhorias:
+- Marcações pendentes agora entram como débito no mês e no ciclo.
+- Folga banco debita a carga esperada do dia.
+- Atestado fecha o dia com impacto 0.
+- Falta debita a carga esperada do dia.
+- Na aba Mês, tocar em um dia abre Registrar naquela data.
+- Na aba Registrar, foram adicionados: Folga banco -8, Atestado 0, Falta -8 e Remover ausência.
+- Cada salvamento tenta enviar imediatamente para a nuvem.
+- Merge entre dispositivos reforçado por horário de batida.
+
+Validação:
+1. Aba Mês > tocar em um dia.
+2. Aplicar Folga banco/Atestado/Falta.
+3. Ver o saldo do mês e ciclo atualizar.
+4. Testar celular/desktop com Enviar/Baixar da nuvem.
+
+
 Eu tenho um ponto. — Release v1.3.6
 
 Build atual: v1.3.6

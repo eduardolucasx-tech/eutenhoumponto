@@ -464,3 +464,12 @@ textarea {
 .result-card h2 {
   letter-spacing: -.03em;
 }
+
+/* v1.3.7 — Débito pendente e ausências */
+.clickable-day { cursor:pointer; }
+.clickable-day:active { transform:translateY(1px); }
+.absence-actions { display:grid; grid-template-columns:1fr; gap:8px; margin-top:10px; }
+@media (min-width:391px){
+  .absence-actions { grid-template-columns:repeat(3,1fr); }
+  .absence-actions .secondary { font-size:12px; padding-left:8px; padding-right:8px; }
+}

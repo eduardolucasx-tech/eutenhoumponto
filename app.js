@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.6';
+const APP_VERSION = 'v1.3.7';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -112,7 +112,8 @@ function stateForCloud(){
     days: state.days || {},
     imports: state.imports || [],
     officialBank: state.officialBank || {},
-    updatedAtLocal: new Date().toISOString()
+    updatedAtLocal: new Date().toISOString(),
+    clientModifiedAt: state.clientModifiedAt || new Date().toISOString()
   };
 }
 
@@ -125,6 +126,20 @@ function countDayEntries(days){
   return Object.values(days || {}).filter(d => d && ((d.punches && d.punches.length) || d.note || d.closed || d.official)).length;
 }
 
+
+function mergeDay(localDay, cloudDay){
+  if(!localDay) return cloudDay;
+  if(!cloudDay) return localDay;
+  const punchMap = new Map();
+  [...(cloudDay.punches || []), ...(localDay.punches || [])].forEach(p => { if(p?.time) punchMap.set(p.time, {...p}); });
+  return { ...cloudDay, ...localDay, punches:[...punchMap.values()].sort((a,b)=>parseHM(a.time)-parseHM(b.time)), absenceType: localDay.absenceType || cloudDay.absenceType || null, note: localDay.note || cloudDay.note || '' };
+}
+function mergeDays(localDays={}, cloudDays={}){
+  const keys = new Set([...Object.keys(localDays||{}), ...Object.keys(cloudDays||{})]);
+  const out = {};
+  keys.forEach(k => out[k] = mergeDay(localDays[k], cloudDays[k]));
+  return out;
+}
 function mergeCloudWithLocal(cloud, mode='smart'){
   const local = stateForCloud();
   const cloudDays = cloud.days || {};
@@ -303,9 +318,10 @@ let state = load();
 let tab = 'home';
 let selectedMonthValue = null;
 let registerView = 'manual';
+let selectedRegisterDate = null;
 const screenEl = document.getElementById('screen');
 function load(){
-  const fresh = { user:null, profile:null, days:{}, imports:[], officialBank:{} };
+  const fresh = { user:null, profile:null, days:{}, imports:[], officialBank:{}, clientModifiedAt:null };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return fresh;
@@ -322,7 +338,7 @@ function load(){
     return fresh;
   }
 }
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(); render(); }
+function save(){ state.clientModifiedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(true); render(); }
 function model(){ return state.profile ? MODELS[state.profile.model] : null; }
 function day(date=iso(nowSP())){ if(!state.days[date]) state.days[date] = { date, punches:[], note:'' }; return state.days[date]; }
 function punchesOf(dayObj){ return [...(dayObj.punches||[])]; }
@@ -457,14 +473,18 @@ function workedMinutes(dayObj, partial=false){
 }
 function expectedMinutes(date){ return model() ? model().expected(date, state.profile) : 0; }
 function requiredPunches(){ return model()?.punchMode === 'autoLunch' ? 2 : 4; }
-function complete(dayObj){ return !!dayObj?.closed || (dayObj.punches||[]).length >= requiredPunches() || expectedMinutes(dayObj.date) === 0; }
+function complete(dayObj){ return !!dayObj?.absenceType || !!dayObj?.closed || (dayObj.punches||[]).length >= requiredPunches() || expectedMinutes(dayObj.date) === 0; }
 function isPending(dayObj){
+  if(dayObj?.absenceType) return false;
   if(dayObj?.closed) return false;
   const exp = expectedMinutes(dayObj.date);
   if(exp <= 0) return false;
   return (dayObj.punches||[]).length < requiredPunches();
 }
 function jornadaStatus(dayObj, partial=false){
+  if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
+  if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
+  if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
   if(isPending(dayObj)) return { text:'Marcação pendente', cls:'warn' };
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj, partial);
@@ -477,6 +497,37 @@ function jornadaStatus(dayObj, partial=false){
 function tribunaLikeModel(){
   return ['tribuna_hub_prog','tribuna_jornalismo'].includes(state.profile?.model);
 }
+
+function absenceLabel(type){
+  return ({ banco:'Folga banco', atestado:'Atestado', falta:'Falta' })[type] || '';
+}
+function setDayAbsence(date, type){
+  const d = day(date);
+  d.absenceType = type;
+  d.punches = [];
+  d.closed = true;
+  d.note = absenceLabel(type);
+  save();
+  showToast(`${absenceLabel(type)} aplicada em ${brDate(date)}.`, type === 'atestado' ? 'ok' : 'warn');
+}
+function clearDayAbsence(date){
+  const d = day(date);
+  d.absenceType = null;
+  if(d.note && ['Folga banco','Atestado','Falta'].includes(d.note)) d.note = '';
+  d.closed = false;
+  save();
+  showToast(`Ausência removida de ${brDate(date)}.`, 'ok');
+}
+function dayAbsenceImpact(dayObj){
+  const type = dayObj?.absenceType;
+  if(!type) return null;
+  const exp = expectedMinutes(dayObj.date);
+  if(type === 'atestado') return { debit:0, credit:0, saldo:0, source:'absence_atestado' };
+  if(type === 'banco') return { debit:exp, credit:0, saldo:-exp, source:'absence_banco' };
+  if(type === 'falta') return { debit:exp, credit:0, saldo:-exp, source:'absence_falta' };
+  return null;
+}
+
 function dayOfficialImpact(dayObj){
   const off = dayObj?.official;
   if(!off) return null;
@@ -485,12 +536,14 @@ function dayOfficialImpact(dayObj){
   return { debit, credit, saldo: credit - debit, source:'official_daily' };
 }
 function estimatedBankImpact(dayObj){
+  const absence = dayAbsenceImpact(dayObj);
+  if(absence) return absence;
   const official = dayOfficialImpact(dayObj);
   if(official) return official;
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
-  if(isPending(dayObj)) return { debit:0, credit:0, saldo:0, source:'open' };
+  if(isPending(dayObj)) return { debit: exp, credit:0, saldo:-exp, source:'pending_debit' };
   const saldo = w - exp;
   return { debit: Math.max(0, -saldo), credit: Math.max(0, saldo), saldo, source:'estimated' };
 }
@@ -549,7 +602,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
     const obj = state.days[id] || {date:id,punches:[]};
     const exp = expectedMinutes(id);
     const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done) saldo += estimatedBankImpact(obj).saldo;
+    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -565,7 +618,7 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
     const obj = state.days[id] || {date:id,punches:[]};
     const exp = expectedMinutes(id);
     const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done) saldo += estimatedBankImpact(obj).saldo;
+    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -579,7 +632,7 @@ function monthStats(year, month){
     const id=iso(d); const obj=state.days[id] || {date:id,punches:[]}; const exp=expectedMinutes(id); const w=workedMinutes(obj); const isPastOrToday = d <= now; const done = complete(obj) && (obj.punches?.length || exp===0);
     if(isPastOrToday){ prev += exp; trab += w; if(isPending(obj)) pend++; }
     const impact = estimatedBankImpact(obj);
-    if(done && isPastOrToday){ saldoConfirmado += impact.saldo; debitEstimated += impact.debit; creditEstimated += impact.credit; }
+    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += impact.saldo; debitEstimated += impact.debit; creditEstimated += impact.credit; }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);
@@ -978,7 +1031,7 @@ function previewEspelhoImport(parsed){
   const sample = rows.slice(0,10).map(r=>{
     const p = adaptedPunchesForModel(r.punches);
     const line = p.length ? `${p[0]} → ${p[p.length-1]}` : (r.note || 'sem batidas');
-    return `<div class="day-item"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><span>${p.length ? `${p.length} bat.` : ''}</span></div><div class="day-sub">${line}</div></div>`;
+    return `<div class="day-item clickable-day" data-day="${r.date}"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><span>${p.length ? `${p.length} bat.` : ''}</span></div><div class="day-sub">${line}</div></div>`;
   }).join('');
   const extraTotal = (parsed.summary.extraNormal||0) + (parsed.summary.extraNoturna||0);
   return `<h2>Prévia do espelho</h2>
@@ -1000,7 +1053,7 @@ function applyEspelhoImport(parsed){
   (parsed.rows||[]).forEach(r=>{
     const dd = day(r.date);
     const punches = adaptedPunchesForModel(r.punches);
-    if(punches.length) dd.punches = punches.map(t=>({time:t, source:'pdf_espelho'}));
+    if(punches.length){ dd.punches = punches.map(t=>({time:t, source:'pdf_espelho'})); dd.absenceType = null; }
     if(r.closed) dd.closed = true;
     if(r.note) dd.note = [dd.note, r.note].filter(Boolean).join(' · ');
   });
@@ -1035,7 +1088,7 @@ async function extractPdfText(file){
 }
 
 function renderRegister(){
-  const date = iso(nowSP());
+  const date = selectedRegisterDate || iso(nowSP());
   const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
   screenEl.innerHTML = `
   <section class="card">
@@ -1052,7 +1105,7 @@ function renderRegister(){
   const renderManual = () => {
     const d = state.days[date] || { punches:[], note:'' };
     const body = document.getElementById('registerBody');
-    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${d.note||''}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
+    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${d.note||''}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco -8</button><button class="secondary" id="medicalDayBtn">Atestado 0</button><button class="secondary danger-text" id="faultDayBtn">Falta -8</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
     const draw = () => {
       const dd = state.days[regDate.value] || {punches:[]};
       regFields.innerHTML = manualFields.map((f,i)=>`<label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}" placeholder="HH:MM">`).join('');
@@ -1062,6 +1115,8 @@ function renderRegister(){
     draw();
     saveReg.onclick = () => {
       const dd = day(regDate.value);
+      dd.absenceType = null;
+      dd.closed = false;
       dd.punches = [...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean).map(t=>({time:t,source:'typed'}));
       dd.note = note.value;
       save();
@@ -1070,6 +1125,10 @@ function renderRegister(){
       render();
     };
     undoRegBtn.onclick = () => undoLastPunch(regDate.value);
+    if(bankDayBtn) bankDayBtn.onclick = () => setDayAbsence(regDate.value, 'banco');
+    if(medicalDayBtn) medicalDayBtn.onclick = () => setDayAbsence(regDate.value, 'atestado');
+    if(faultDayBtn) faultDayBtn.onclick = () => setDayAbsence(regDate.value, 'falta');
+    if(clearAbsenceBtn) clearAbsenceBtn.onclick = () => clearDayAbsence(regDate.value);
   };
 
   const renderImportView = () => {
@@ -1160,8 +1219,9 @@ function renderMonth(){
   const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
   const rowsHtml = st.rows.map(r=>{
     const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
-    const short = p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro');
-    return `<div class="day-item"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]}) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.saldo<0?'neg':r.saldo>0?'pos':''}">${fmtMin(r.saldo)}</span></div></div><div class="day-sub">${short}</div></div>`;
+    const objForShort = state.days[r.date] || {date:r.date,punches:r.punches||[]};
+    const short = objForShort.absenceType ? absenceLabel(objForShort.absenceType) : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
+    return `<div class="day-item clickable-day" data-day="${r.date}"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]}) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.saldo<0?'neg':r.saldo>0?'pos':''}">${fmtMin(r.saldo)}</span></div></div><div class="day-sub">${short}</div></div>`;
   }).join('');
   const bankBody = st.officialBank ?
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
@@ -1175,6 +1235,7 @@ function renderMonth(){
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
   <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;
   monthPicker.onchange = () => { selectedMonthValue = monthPicker.value; renderMonth(); };
+  document.querySelectorAll('.clickable-day').forEach(item => item.onclick = () => { selectedRegisterDate = item.dataset.day; registerView = 'manual'; tab = 'register'; renderRegister(); });
   csvBtn.onclick = ()=>{ exportMonthCsv(year,month); showToast('CSV exportado.', 'ok'); };
   excelBtn.onclick = ()=>{ exportMonthExcel(year,month); showToast('Arquivo Excel exportado.', 'ok'); };
   copyReportBtn.onclick = async ()=>{

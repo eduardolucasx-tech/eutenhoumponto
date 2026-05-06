@@ -1,2 +1,2 @@
-v1.3.6
-Build: Leitura PDF reforçada
+v1.3.7
+Build: Débito pendente, ausências e sync reforçado

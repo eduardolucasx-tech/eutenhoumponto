@@ -1,7 +1,8 @@
 {
   "version": true,
-  "normalizePdfEspelhoText": true,
-  "extractEspelhoDailyRowsFromText": true,
-  "parseEspelhoLine": true,
-  "diagnostic": true
+  "selectedRegisterDate": true,
+  "absence": true,
+  "pendingDebit": true,
+  "clickableDay": true,
+  "immediatePush": true
 }
