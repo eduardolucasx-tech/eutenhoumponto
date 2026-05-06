@@ -492,31 +492,3 @@ textarea {
 .absence-actions .secondary {
   min-height: 46px;
 }
-
-
-/* v1.3.11 — Banco do ciclo com saldo oficial e saldo calculado */
-.bank-dual {
-  display: grid;
-  gap: 14px;
-}
-.bank-block {
-  border: 1px solid rgba(255,255,255,.07);
-  border-radius: 20px;
-  padding: 14px;
-  background: rgba(255,255,255,.025);
-}
-.bank-block h3 {
-  margin: 0 0 6px;
-  font-size: 15px;
-  letter-spacing: -.02em;
-  color: #f5f8ff;
-}
-.bank-block .muted {
-  margin: 0 0 12px;
-}
-
-
-/* v1.3.14 — Banco calculado pelo ciclo real */
-.bank-block .kpi-strip .kpi-mini strong.warn {
-  color: var(--yellow);
-}

@@ -1,7 +1,7 @@
 {
   "version": true,
-  "appMonthStats": true,
-  "monthDebitUi": true,
-  "noSyncChange": true,
-  "appMonthReturn": true
+  "hydrateDefined": true,
+  "pushDefined": true,
+  "pullDefined": true,
+  "noUndefinedNamesLikely": true
 }

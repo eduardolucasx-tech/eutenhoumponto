@@ -1,2 +1,2 @@
-v1.3.16
-Build: Débito mês a mês pelo app
+v1.3.10
+Build: Funções de nuvem estáveis

@@ -1,9 +1,5 @@
-function safeMinutes(value){
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.16';
+const APP_VERSION = 'v1.3.10';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -13,8 +9,7 @@ const weekFull = ['domingo','segunda-feira','terça-feira','quarta-feira','quint
 const weekShort = ['dom','seg','ter','qua','qui','sex','sáb'];
 const monthNames = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 const parseHM = t => { if(!t) return null; const [h,m] = t.split(':').map(Number); return h*60+m; };
-const fmtMin = mins => { mins = safeMinutes(mins); const sign = mins < 0 ? '-' : ''; mins = Math.abs(Math.round(mins)); return `${sign}${pad(Math.floor(mins/60))}:${pad(mins%60)}`; };
-const fmtSafeBank = mins => fmtMin(safeMinutes(mins));
+const fmtMin = mins => { const sign = mins < 0 ? '-' : ''; mins = Math.abs(Math.round(mins)); return `${sign}${pad(Math.floor(mins/60))}:${pad(mins%60)}`; };
 const dateObj = isoDate => { const [y,m,d] = isoDate.split('-').map(Number); return new Date(y, m-1, d); };
 
 const MODELS = {
@@ -318,7 +313,7 @@ function grossMinutesForExpected(net){
 }
 function homeStatusLine(dayObj){
   const p = punchesOf(dayObj);
-  const exp = safeMinutes(expectedMinutes(dayObj.date));
+  const exp = expectedMinutes(dayObj.date);
   if(model()?.punchMode === 'autoLunch'){
     if(p.length === 0) return 'Aguardando entrada';
     if(p.length >= 2) return 'Saída registrada';
@@ -381,7 +376,7 @@ function complete(dayObj){ return !!dayObj?.absenceType || !!dayObj?.closed || (
 function isPending(dayObj){
   if(dayObj?.absenceType) return false;
   if(dayObj?.closed) return false;
-  const exp = safeMinutes(expectedMinutes(dayObj.date));
+  const exp = expectedMinutes(dayObj.date);
   if(exp <= 0) return false;
   return (dayObj.punches||[]).length < requiredPunches();
 }
@@ -390,7 +385,7 @@ function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
   if(isPending(dayObj)) return { text:'Marcação pendente', cls:'warn' };
-  const exp = safeMinutes(expectedMinutes(dayObj.date));
+  const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj, partial);
   const saldo = w - exp;
   if(saldo < 0) return { text:'Jornada incompleta', cls:'danger' };
@@ -425,7 +420,7 @@ function clearDayAbsence(date){
 function dayAbsenceImpact(dayObj){
   const type = dayObj?.absenceType;
   if(!type) return null;
-  const exp = safeMinutes(expectedMinutes(dayObj.date));
+  const exp = expectedMinutes(dayObj.date);
   if(type === 'atestado') return { debit:0, credit:0, saldo:0, source:'absence_atestado' };
   if(type === 'banco') return { debit:exp, credit:0, saldo:-exp, source:'absence_banco' };
   if(type === 'falta') return { debit:exp, credit:0, saldo:-exp, source:'absence_falta' };
@@ -444,7 +439,7 @@ function estimatedBankImpact(dayObj){
   if(absence) return absence;
   const official = dayOfficialImpact(dayObj);
   if(official) return official;
-  const exp = safeMinutes(expectedMinutes(dayObj.date));
+  const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
   if(isPending(dayObj)) return { debit: exp, credit:0, saldo:-exp, source:'pending_debit' };
@@ -506,7 +501,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
     const obj = state.days[id] || {date:id,punches:[]};
     const exp = expectedMinutes(id);
     const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += safeMinutes(estimatedBankImpact(obj).saldo);
+    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -522,165 +517,10 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
     const obj = state.days[id] || {date:id,punches:[]};
     const exp = expectedMinutes(id);
     const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += safeMinutes(estimatedBankImpact(obj).saldo);
+    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
-
-
-
-function eachDate(startIso, endIso){
-  const out = [];
-  const start = dateObj(startIso);
-  const end = dateObj(endIso);
-  if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return out;
-  for(const d = new Date(start); d <= end; d.setDate(d.getDate()+1)){
-    out.push(iso(d));
-  }
-  return out;
-}
-
-function endOfSelectedMonth(year, month){
-  return new Date(year, month + 1, 0);
-}
-
-
-function appMonthCalculatedStats(year, month){
-  const todayIso = iso(nowSP());
-  const monthStart = `${year}-${pad(month+1)}-01`;
-  const monthEnd = iso(new Date(year, month + 1, 0));
-  const endIso = monthEnd < todayIso ? monthEnd : todayIso;
-
-  let debit = 0;
-  let credit = 0;
-  let saldo = 0;
-  let consideredDays = 0;
-  let pendingDays = 0;
-  let absenceBanco = 0;
-  let absenceFalta = 0;
-  let absenceAtestado = 0;
-
-  for(const id of eachDate(monthStart, monthEnd)){
-    if(id > endIso) break;
-
-    let exp = safeMinutes(expectedMinutes(id));
-    if(exp <= 0){
-      const dow = dateObj(id).getDay();
-      if(dow >= 1 && dow <= 5) exp = 8*60;
-    }
-    if(exp <= 0) continue;
-
-    const obj = state.days[id] || { date:id, punches:[] };
-    const p = punchesOf(obj);
-    let dayImpact;
-
-    if(obj.absenceType === 'atestado'){
-      dayImpact = { debit:0, credit:0, saldo:0 };
-      absenceAtestado++;
-    } else if(obj.absenceType === 'banco'){
-      dayImpact = { debit:exp, credit:0, saldo:-exp };
-      absenceBanco++;
-    } else if(obj.absenceType === 'falta'){
-      dayImpact = { debit:exp, credit:0, saldo:-exp };
-      absenceFalta++;
-    } else if(!p.length || isPending(obj)){
-      dayImpact = { debit:exp, credit:0, saldo:-exp };
-      pendingDays++;
-    } else {
-      dayImpact = estimatedBankImpact(obj);
-    }
-
-    debit += safeMinutes(dayImpact.debit);
-    credit += safeMinutes(dayImpact.credit);
-    saldo += safeMinutes(dayImpact.saldo);
-    consideredDays++;
-  }
-
-  return {
-    debit:safeMinutes(debit),
-    credit:safeMinutes(credit),
-    saldo:safeMinutes(saldo),
-    consideredDays,
-    pendingDays,
-    absenceBanco,
-    absenceFalta,
-    absenceAtestado
-  };
-}
-
-function appCycleCalculatedStats(cycle, selectedYear, selectedMonth){
-  const todayIso = iso(nowSP());
-  const selectedEnd = iso(endOfSelectedMonth(selectedYear, selectedMonth));
-  const endIso = selectedEnd < todayIso ? selectedEnd : todayIso;
-
-  let debit = 0;
-  let credit = 0;
-  let saldo = 0;
-  let consideredDays = 0;
-  let pendingDays = 0;
-  let absenceBanco = 0;
-  let absenceFalta = 0;
-  let absenceAtestado = 0;
-
-  const start = String(cycle.start);
-  const end = String(cycle.end);
-
-  for(const id of eachDate(start, end)){
-    if(id > endIso) break;
-
-    let exp = safeMinutes(expectedMinutes(id));
-    if(exp <= 0){
-      const dow = dateObj(id).getDay();
-      if(dow >= 1 && dow <= 5) exp = 8*60;
-    }
-    if(exp <= 0) continue;
-
-    const obj = state.days[id] || { date:id, punches:[] };
-    const p = punchesOf(obj);
-    let dayImpact;
-
-    if(obj.absenceType === 'atestado'){
-      dayImpact = { debit:0, credit:0, saldo:0 };
-      absenceAtestado++;
-    } else if(obj.absenceType === 'banco'){
-      dayImpact = { debit:exp, credit:0, saldo:-exp };
-      absenceBanco++;
-    } else if(obj.absenceType === 'falta'){
-      dayImpact = { debit:exp, credit:0, saldo:-exp };
-      absenceFalta++;
-    } else if(!p.length || isPending(obj)){
-      // Dia útil sem fechamento até hoje precisa entrar como débito/pending.
-      dayImpact = { debit:exp, credit:0, saldo:-exp };
-      pendingDays++;
-    } else {
-      dayImpact = estimatedBankImpact(obj);
-    }
-
-    debit += safeMinutes(dayImpact.debit);
-    credit += safeMinutes(dayImpact.credit);
-    saldo += safeMinutes(dayImpact.saldo);
-    consideredDays++;
-  }
-
-  const initial = safeMinutes(state.profile?.bankStart);
-  return {
-    initial,
-    debit:safeMinutes(debit),
-    credit:safeMinutes(credit),
-    saldo:safeMinutes(saldo),
-    total:safeMinutes(initial + saldo),
-    consideredDays,
-    pendingDays,
-    absenceBanco,
-    absenceFalta,
-    absenceAtestado
-  };
-}
-
-function cycleAppCalculatedTotal(cycle, selectedYear, selectedMonth){
-  return appCycleCalculatedStats(cycle, selectedYear, selectedMonth).total;
-}
-
 function monthStats(year, month){
   const now = nowSP();
   const first = new Date(year, month, 1); const last = new Date(year, month+1, 0);
@@ -691,7 +531,7 @@ function monthStats(year, month){
     const id=iso(d); const obj=state.days[id] || {date:id,punches:[]}; const exp=expectedMinutes(id); const w=workedMinutes(obj); const isPastOrToday = d <= now; const done = complete(obj) && (obj.punches?.length || exp===0);
     if(isPastOrToday){ prev += exp; trab += w; if(isPending(obj)) pend++; }
     const impact = estimatedBankImpact(obj);
-    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += safeMinutes(impact.saldo); debitEstimated += safeMinutes(impact.debit); creditEstimated += safeMinutes(impact.credit); }
+    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += impact.saldo; debitEstimated += impact.debit; creditEstimated += impact.credit; }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);
@@ -1276,9 +1116,6 @@ function renderMonth(){
   const year = Number(yearStr);
   const month = Number(monthStr) - 1;
   const st = monthStats(year, month);
-  st.cycleAppTotal = safeMinutes(st.cycleAppTotal);
-  st.cycleTotal = safeMinutes(st.cycleTotal);
-  st.cycleSaldo = safeMinutes(st.cycleSaldo);
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
   const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
   const rowsHtml = st.rows.map(r=>{
@@ -1287,36 +1124,14 @@ function renderMonth(){
     const short = objForShort.absenceType ? absenceLabel(objForShort.absenceType) : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
     return `<div class="day-item ${r.future ? 'future-day' : 'clickable-day'}" ${r.future ? '' : `data-day="${r.date}"`}><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${(!r.future && isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]})) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.future ? '' : (r.saldo<0?'neg':r.saldo>0?'pos':'')}">${r.future ? '--:--' : fmtMin(r.saldo)}</span></div></div><div class="day-sub">${r.future ? 'Dia futuro' : short}</div></div>`;
   }).join('');
-  const officialBankBody = st.officialBank
-    ? `<div class="kpi-strip two">
-        <div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div>
-        <div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div>
-        <div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div>
-        <div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div>
-        <div class="kpi-mini"><span>Total oficial do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div>
-      </div>`
-    : `<div class="empty-state compact"><strong>Sem saldo oficial importado</strong><span>Importe um espelho para comparar o saldo oficial com o saldo calculado pelo app.</span></div>`;
-
-  const appBankBody = `<div class="kpi-strip two">
-      <div class="kpi-mini"><span>Mês calculado</span><strong>${monthNames[month]} ${year}</strong></div>
-      <div class="kpi-mini"><span>Débito calculado no mês</span><strong class="danger">${fmtMin(st.appMonthStats?.debit)}</strong></div>
-      <div class="kpi-mini"><span>Crédito calculado no mês</span><strong class="ok">${fmtMin(st.appMonthStats?.credit)}</strong></div>
-      <div class="kpi-mini"><span>Saldo calculado no mês</span><strong class="${safeMinutes(st.appMonthStats?.saldo)<0?'danger':'ok'}">${fmtMin(st.appMonthStats?.saldo)}</strong></div>
-      <div class="kpi-mini"><span>Dias considerados</span><strong>${st.appMonthStats?.consideredDays || 0}</strong></div>
-      <div class="kpi-mini"><span>Pendências</span><strong class="warn">${st.appMonthStats?.pendingDays || 0}</strong></div>
-      <div class="kpi-mini"><span>Folga banco/Falta</span><strong>${(st.appMonthStats?.absenceBanco || 0) + (st.appMonthStats?.absenceFalta || 0)}</strong></div>
-      <div class="kpi-mini"><span>Atestado</span><strong>${st.appMonthStats?.absenceAtestado || 0}</strong></div>
-    </div>`;
-
-  const bankBody = `<div class="bank-dual">
-      <div class="bank-block"><h3>Saldo oficial</h3><p class="muted">${st.officialBank ? 'Usa o último espelho importado como base e soma apenas a movimentação posterior registrada no app.' : 'Nenhum espelho oficial importado para este ciclo.'}</p>${officialBankBody}</div>
-      <div class="bank-block"><h3>Saldo mensal calculado pelo app</h3><p class="muted">Ignora o saldo oficial e calcula apenas o mês selecionado a partir das batidas, pendências, folgas banco, faltas e atestados salvos no app.</p>${appBankBody}</div>
-    </div>`;
+  const bankBody = st.officialBank ?
+    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
+    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
   const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
   <section class="card"><div class="section-head"><div><h2>Mês</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
-  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">Comparativo entre o saldo oficial do espelho e o saldo recalculado pelo app.</p>${bankBody}</section>
+  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>
   <section class="card"><h2 class="section-title">Registro mensal</h2>${emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml}</section>
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
   <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;
