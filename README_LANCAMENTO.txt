@@ -1,3 +1,30 @@
+Eu tenho um ponto. — Release v1.3.16
+
+Build atual: v1.3.16
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.16 — Débito mês a mês pelo app
+================================================================================
+
+Mudança:
+- O bloco "Saldo calculado pelo app" agora trabalha mês a mês.
+- Não tenta mais fechar o ciclo completo nesta tela.
+- Para o mês selecionado, o app calcula:
+  - Débito calculado no mês;
+  - Crédito calculado no mês;
+  - Saldo calculado no mês;
+  - Dias considerados;
+  - Pendências;
+  - Folga banco/Falta;
+  - Atestado.
+- Dias futuros seguem fora do cálculo.
+- Sem alteração na sincronização nesta versão.
+
+Objetivo:
+- Facilitar conferência mensal primeiro, antes de tentar fechar o ciclo completo.
+
+
 Eu tenho um ponto. — Release v1.3.15
 
 Build atual: v1.3.15

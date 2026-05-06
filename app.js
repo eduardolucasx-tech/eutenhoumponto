@@ -3,7 +3,7 @@ function safeMinutes(value){
   return Number.isFinite(n) ? n : 0;
 }
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.15';
+const APP_VERSION = 'v1.3.16';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -542,6 +542,70 @@ function eachDate(startIso, endIso){
 
 function endOfSelectedMonth(year, month){
   return new Date(year, month + 1, 0);
+}
+
+
+function appMonthCalculatedStats(year, month){
+  const todayIso = iso(nowSP());
+  const monthStart = `${year}-${pad(month+1)}-01`;
+  const monthEnd = iso(new Date(year, month + 1, 0));
+  const endIso = monthEnd < todayIso ? monthEnd : todayIso;
+
+  let debit = 0;
+  let credit = 0;
+  let saldo = 0;
+  let consideredDays = 0;
+  let pendingDays = 0;
+  let absenceBanco = 0;
+  let absenceFalta = 0;
+  let absenceAtestado = 0;
+
+  for(const id of eachDate(monthStart, monthEnd)){
+    if(id > endIso) break;
+
+    let exp = safeMinutes(expectedMinutes(id));
+    if(exp <= 0){
+      const dow = dateObj(id).getDay();
+      if(dow >= 1 && dow <= 5) exp = 8*60;
+    }
+    if(exp <= 0) continue;
+
+    const obj = state.days[id] || { date:id, punches:[] };
+    const p = punchesOf(obj);
+    let dayImpact;
+
+    if(obj.absenceType === 'atestado'){
+      dayImpact = { debit:0, credit:0, saldo:0 };
+      absenceAtestado++;
+    } else if(obj.absenceType === 'banco'){
+      dayImpact = { debit:exp, credit:0, saldo:-exp };
+      absenceBanco++;
+    } else if(obj.absenceType === 'falta'){
+      dayImpact = { debit:exp, credit:0, saldo:-exp };
+      absenceFalta++;
+    } else if(!p.length || isPending(obj)){
+      dayImpact = { debit:exp, credit:0, saldo:-exp };
+      pendingDays++;
+    } else {
+      dayImpact = estimatedBankImpact(obj);
+    }
+
+    debit += safeMinutes(dayImpact.debit);
+    credit += safeMinutes(dayImpact.credit);
+    saldo += safeMinutes(dayImpact.saldo);
+    consideredDays++;
+  }
+
+  return {
+    debit:safeMinutes(debit),
+    credit:safeMinutes(credit),
+    saldo:safeMinutes(saldo),
+    consideredDays,
+    pendingDays,
+    absenceBanco,
+    absenceFalta,
+    absenceAtestado
+  };
 }
 
 function appCycleCalculatedStats(cycle, selectedYear, selectedMonth){
@@ -1234,20 +1298,19 @@ function renderMonth(){
     : `<div class="empty-state compact"><strong>Sem saldo oficial importado</strong><span>Importe um espelho para comparar o saldo oficial com o saldo calculado pelo app.</span></div>`;
 
   const appBankBody = `<div class="kpi-strip two">
-      <div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div>
-      <div class="kpi-mini"><span>Saldo inicial configurado</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div>
-      <div class="kpi-mini"><span>Débito calculado no ciclo</span><strong class="danger">${fmtMin(st.appCycleStats?.debit)}</strong></div>
-      <div class="kpi-mini"><span>Crédito calculado no ciclo</span><strong class="ok">${fmtMin(st.appCycleStats?.credit)}</strong></div>
-      <div class="kpi-mini"><span>Total calculado pelo app</span><strong class="${safeMinutes(st.cycleAppTotal)<0?'danger':'ok'}">${fmtSafeBank(st.cycleAppTotal)}</strong></div>
-      <div class="kpi-mini"><span>Dias considerados</span><strong>${st.appCycleStats?.consideredDays || 0}</strong></div>
-      <div class="kpi-mini"><span>Pendências</span><strong class="warn">${st.appCycleStats?.pendingDays || 0}</strong></div>
-      <div class="kpi-mini"><span>Folga banco/Falta</span><strong>${(st.appCycleStats?.absenceBanco || 0) + (st.appCycleStats?.absenceFalta || 0)}</strong></div>
-      <div class="kpi-mini"><span>Atestado</span><strong>${st.appCycleStats?.absenceAtestado || 0}</strong></div>
+      <div class="kpi-mini"><span>Mês calculado</span><strong>${monthNames[month]} ${year}</strong></div>
+      <div class="kpi-mini"><span>Débito calculado no mês</span><strong class="danger">${fmtMin(st.appMonthStats?.debit)}</strong></div>
+      <div class="kpi-mini"><span>Crédito calculado no mês</span><strong class="ok">${fmtMin(st.appMonthStats?.credit)}</strong></div>
+      <div class="kpi-mini"><span>Saldo calculado no mês</span><strong class="${safeMinutes(st.appMonthStats?.saldo)<0?'danger':'ok'}">${fmtMin(st.appMonthStats?.saldo)}</strong></div>
+      <div class="kpi-mini"><span>Dias considerados</span><strong>${st.appMonthStats?.consideredDays || 0}</strong></div>
+      <div class="kpi-mini"><span>Pendências</span><strong class="warn">${st.appMonthStats?.pendingDays || 0}</strong></div>
+      <div class="kpi-mini"><span>Folga banco/Falta</span><strong>${(st.appMonthStats?.absenceBanco || 0) + (st.appMonthStats?.absenceFalta || 0)}</strong></div>
+      <div class="kpi-mini"><span>Atestado</span><strong>${st.appMonthStats?.absenceAtestado || 0}</strong></div>
     </div>`;
 
   const bankBody = `<div class="bank-dual">
       <div class="bank-block"><h3>Saldo oficial</h3><p class="muted">${st.officialBank ? 'Usa o último espelho importado como base e soma apenas a movimentação posterior registrada no app.' : 'Nenhum espelho oficial importado para este ciclo.'}</p>${officialBankBody}</div>
-      <div class="bank-block"><h3>Saldo calculado pelo app</h3><p class="muted">Ignora o saldo oficial e recalcula o ciclo inteiro, do início do ciclo até hoje, a partir das batidas, pendências, folgas banco, faltas e atestados salvos no app.</p>${appBankBody}</div>
+      <div class="bank-block"><h3>Saldo mensal calculado pelo app</h3><p class="muted">Ignora o saldo oficial e calcula apenas o mês selecionado a partir das batidas, pendências, folgas banco, faltas e atestados salvos no app.</p>${appBankBody}</div>
     </div>`;
   const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';

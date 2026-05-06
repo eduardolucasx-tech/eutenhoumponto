@@ -1,7 +1,7 @@
 {
   "version": true,
-  "eachDate": true,
-  "fallback8h": true,
-  "consideredDays": true,
-  "extraCounters": true
+  "appMonthStats": true,
+  "monthDebitUi": true,
+  "noSyncChange": true,
+  "appMonthReturn": true
 }
