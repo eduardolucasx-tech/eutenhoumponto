@@ -1,7 +1,7 @@
 {
   "version": true,
-  "cloudLastError": true,
-  "pushReturns": true,
-  "firestoreValidation": false,
-  "profileError": true
+  "hydrateDefined": true,
+  "pushDefined": true,
+  "pullDefined": true,
+  "noUndefinedNamesLikely": true
 }

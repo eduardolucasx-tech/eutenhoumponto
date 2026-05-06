@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.9';
+const APP_VERSION = 'v1.3.10';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1275,3 +1275,106 @@ setInterval(() => {
 initFirebaseAuth()
   .catch((err) => console.warn("Firebase init falhou:", err))
   .finally(() => render());
+
+
+async function hydrateFromCloud(mode='smart'){
+  if(!state.user?.uid){
+    cloudReady = false;
+    cloudLastError = 'Usuário não conectado.';
+    return false;
+  }
+
+  cloudHydrating = true;
+  try{
+    if(!firebaseReady){
+      const okInit = await initFirebaseAuth();
+      if(!okInit) throw new Error('Firebase não iniciou.');
+    }
+    if(!firebaseDb || !firestoreFns) throw new Error('Firestore indisponível.');
+
+    const ref = await cloudDocRef();
+    if(!ref) throw new Error('Referência Firestore não criada.');
+
+    const snap = await firestoreFns.getDoc(ref);
+    if(snap.exists()){
+      const merged = mergeCloudWithLocal(snap.data() || {}, mode);
+      state.profile = merged.profile || state.profile;
+      state.days = merged.days || {};
+      state.imports = merged.imports || [];
+      state.officialBank = merged.officialBank || {};
+      state.clientModifiedAt = merged.clientModifiedAt || state.clientModifiedAt;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    cloudReady = true;
+    cloudLastError = '';
+    cloudLastSyncAt = new Date();
+    return true;
+  }catch(err){
+    console.warn('Falha ao baixar da nuvem:', err);
+    cloudReady = false;
+    cloudLastError = err?.message || String(err);
+    return false;
+  }finally{
+    cloudHydrating = false;
+  }
+}
+
+async function pushStateToCloud(immediate=false){
+  if(!state.user?.uid){
+    cloudReady = false;
+    cloudLastError = 'Usuário não conectado.';
+    return false;
+  }
+
+  const doPush = async () => {
+    try{
+      if(!firebaseReady){
+        const okInit = await initFirebaseAuth();
+        if(!okInit) throw new Error('Firebase não iniciou.');
+      }
+      if(!firebaseDb || !firestoreFns) throw new Error('Firestore indisponível.');
+
+      const ref = await cloudDocRef();
+      if(!ref) throw new Error('Referência Firestore não criada.');
+
+      await firestoreFns.setDoc(ref, {
+        ...stateForCloud(),
+        userMeta: {
+          name: state.user?.name || '',
+          email: state.user?.email || '',
+          photoURL: state.user?.photoURL || ''
+        },
+        updatedAt: firestoreFns.serverTimestamp()
+      }, { merge: true });
+
+      cloudReady = true;
+      cloudLastError = '';
+      cloudLastSyncAt = new Date();
+      return true;
+    }catch(err){
+      console.warn('Falha ao enviar para a nuvem:', err);
+      cloudReady = false;
+      cloudLastError = err?.message || String(err);
+      return false;
+    }
+  };
+
+  if(immediate) return await doPush();
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(doPush, 700);
+  return true;
+}
+
+async function pullStateFromCloud(){
+  const ok = await hydrateFromCloud('cloud');
+  if(ok){
+    showToast('Dados baixados da nuvem.', 'ok');
+    render();
+  } else {
+    showToast(`Não foi possível baixar: ${cloudLastError || 'erro desconhecido'}`, 'warn');
+    renderProfileScreen();
+  }
+  return ok;
+}
+

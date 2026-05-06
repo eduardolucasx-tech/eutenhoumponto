@@ -1,3 +1,29 @@
+Eu tenho um ponto. — Release v1.3.10
+
+Build atual: v1.3.10
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.10 — Funções de nuvem estáveis
+================================================================================
+
+Correção:
+- Corrigidos erros do console:
+  - hydrateFromCloud is not defined
+  - pushStateToCloud is not defined
+  - pullStateFromCloud is not defined
+- Criada camada estável com essas três funções.
+- Botões Enviar para a nuvem e Baixar da nuvem voltam a apontar para funções existentes.
+- Perfil continua mostrando erro de nuvem quando houver.
+
+Validação:
+1. Abrir Perfil.
+2. Tocar em Enviar para a nuvem.
+3. Tocar em Baixar da nuvem.
+4. Console não deve mostrar funções indefinidas.
+5. Se falhar, Perfil deve mostrar o erro real.
+
+
 Eu tenho um ponto. — Release v1.3.9
 
 Build atual: v1.3.9

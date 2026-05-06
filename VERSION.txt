@@ -1,2 +1,2 @@
-v1.3.9
-Build: Hotfix envio/baixa da nuvem
+v1.3.10
+Build: Funções de nuvem estáveis
