@@ -1,5 +1,9 @@
+function safeMinutes(value){
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.11';
+const APP_VERSION = 'v1.3.12';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -313,7 +317,7 @@ function grossMinutesForExpected(net){
 }
 function homeStatusLine(dayObj){
   const p = punchesOf(dayObj);
-  const exp = expectedMinutes(dayObj.date);
+  const exp = safeMinutes(expectedMinutes(dayObj.date));
   if(model()?.punchMode === 'autoLunch'){
     if(p.length === 0) return 'Aguardando entrada';
     if(p.length >= 2) return 'Saída registrada';
@@ -376,7 +380,7 @@ function complete(dayObj){ return !!dayObj?.absenceType || !!dayObj?.closed || (
 function isPending(dayObj){
   if(dayObj?.absenceType) return false;
   if(dayObj?.closed) return false;
-  const exp = expectedMinutes(dayObj.date);
+  const exp = safeMinutes(expectedMinutes(dayObj.date));
   if(exp <= 0) return false;
   return (dayObj.punches||[]).length < requiredPunches();
 }
@@ -385,7 +389,7 @@ function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
   if(isPending(dayObj)) return { text:'Marcação pendente', cls:'warn' };
-  const exp = expectedMinutes(dayObj.date);
+  const exp = safeMinutes(expectedMinutes(dayObj.date));
   const w = workedMinutes(dayObj, partial);
   const saldo = w - exp;
   if(saldo < 0) return { text:'Jornada incompleta', cls:'danger' };
@@ -420,7 +424,7 @@ function clearDayAbsence(date){
 function dayAbsenceImpact(dayObj){
   const type = dayObj?.absenceType;
   if(!type) return null;
-  const exp = expectedMinutes(dayObj.date);
+  const exp = safeMinutes(expectedMinutes(dayObj.date));
   if(type === 'atestado') return { debit:0, credit:0, saldo:0, source:'absence_atestado' };
   if(type === 'banco') return { debit:exp, credit:0, saldo:-exp, source:'absence_banco' };
   if(type === 'falta') return { debit:exp, credit:0, saldo:-exp, source:'absence_falta' };
@@ -439,7 +443,7 @@ function estimatedBankImpact(dayObj){
   if(absence) return absence;
   const official = dayOfficialImpact(dayObj);
   if(official) return official;
-  const exp = expectedMinutes(dayObj.date);
+  const exp = safeMinutes(expectedMinutes(dayObj.date));
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
   if(isPending(dayObj)) return { debit: exp, credit:0, saldo:-exp, source:'pending_debit' };
@@ -501,7 +505,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
     const obj = state.days[id] || {date:id,punches:[]};
     const exp = expectedMinutes(id);
     const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
+    if(done || isPending(obj)) saldo += safeMinutes(estimatedBankImpact(obj).saldo);
   }
   return saldo;
 }
@@ -517,7 +521,7 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
     const obj = state.days[id] || {date:id,punches:[]};
     const exp = expectedMinutes(id);
     const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
+    if(done || isPending(obj)) saldo += safeMinutes(estimatedBankImpact(obj).saldo);
   }
   return saldo;
 }
@@ -525,7 +529,9 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
 function cycleAppCalculatedTotal(cycle, selectedYear, selectedMonth){
   // Saldo calculado pelo app sem usar espelho oficial como base.
   // Usa apenas saldo inicial configurado + batidas/ausências registradas.
-  return (Number(state.profile?.bankStart) || 0) + cycleConfirmedSaldo(cycle, selectedYear, selectedMonth);
+  const initial = safeMinutes(state.profile?.bankStart);
+  const calculated = safeMinutes(cycleConfirmedSaldo(cycle, selectedYear, selectedMonth));
+  return initial + calculated;
 }
 
 function monthStats(year, month){
@@ -538,7 +544,7 @@ function monthStats(year, month){
     const id=iso(d); const obj=state.days[id] || {date:id,punches:[]}; const exp=expectedMinutes(id); const w=workedMinutes(obj); const isPastOrToday = d <= now; const done = complete(obj) && (obj.punches?.length || exp===0);
     if(isPastOrToday){ prev += exp; trab += w; if(isPending(obj)) pend++; }
     const impact = estimatedBankImpact(obj);
-    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += impact.saldo; debitEstimated += impact.debit; creditEstimated += impact.credit; }
+    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += safeMinutes(impact.saldo); debitEstimated += safeMinutes(impact.debit); creditEstimated += safeMinutes(impact.credit); }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);

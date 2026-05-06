@@ -1,7 +1,7 @@
 {
   "version": true,
-  "cycleAppCalculatedTotal": true,
-  "cycleAppTotal": true,
-  "saldoOficial": true,
-  "saldoCalculado": true
+  "safeMinutes": true,
+  "fmtMinSafe": false,
+  "cycleAppSafe": true,
+  "nanTextNotInCode": true
 }

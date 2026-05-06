@@ -1,3 +1,24 @@
+Eu tenho um ponto. — Release v1.3.12
+
+Build atual: v1.3.12
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.12 — Correção NaN no banco calculado
+================================================================================
+
+Correção:
+- Corrigido Total calculado pelo app aparecendo como NaN:NaN.
+- Adicionado safeMinutes() para impedir valores inválidos em cálculos de banco.
+- fmtMin() agora trata valores inválidos como 00:00 em vez de quebrar a interface.
+- Acúmulos de ciclo/mês agora ignoram NaN e usam apenas minutos válidos.
+
+Validação:
+1. Abrir Mês > Banco do ciclo.
+2. Conferir o bloco Saldo calculado pelo app.
+3. Total calculado pelo app deve aparecer como hora válida, nunca NaN:NaN.
+
+
 Eu tenho um ponto. — Release v1.3.11
 
 Build atual: v1.3.11

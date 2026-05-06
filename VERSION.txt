@@ -1,2 +1,2 @@
-v1.3.11
-Build: Banco do ciclo com dois saldos
+v1.3.12
+Build: Fix NaN banco calculado
