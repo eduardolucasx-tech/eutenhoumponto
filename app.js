@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10';
+const APP_VERSION = 'v1.3.10.1';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -671,10 +671,40 @@ function render(){
   }
 }
 
+
+async function loginWithGoogle(){
+  try{
+    if(!firebaseReady){
+      const ok = await initFirebaseAuth();
+      if(!ok) throw new Error('Firebase não iniciou. Confira firebase-config.js e domínios autorizados.');
+    }
+    if(!firebaseAuth || !firebaseProvider || !firebaseFns) throw new Error('Firebase Auth indisponível.');
+    await firebaseFns.signInWithPopup(firebaseAuth, firebaseProvider);
+  }catch(err){
+    console.warn('Falha no login Google:', err);
+    if(typeof showToast === 'function') showToast(`Erro no login Google: ${err?.message || err}`, 'warn');
+    else alert(`Erro no login Google: ${err?.message || err}`);
+  }
+}
+
+async function logoutGoogle(){
+  try{
+    if(firebaseReady && firebaseAuth && firebaseFns){
+      await firebaseFns.signOut(firebaseAuth);
+    }
+  }catch(err){
+    console.warn('Falha ao desconectar Google:', err);
+  }
+  state.user = null;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  tab = 'home';
+  render();
+}
+
 function renderLogin(){
   screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para sincronizar seu perfil, marcações e banco de horas.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted" style="margin-top:12px">Versão ${APP_VERSION}</p></section></div>`;
   const btn = document.getElementById('googleLogin');
-  if(btn) btn.onclick = loginWithGoogle;
+  if(btn) btn.onclick = () => loginWithGoogle();
 }
 
 function renderModelChoice(){

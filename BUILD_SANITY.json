@@ -1,7 +1,6 @@
 {
   "version": true,
-  "hydrateDefined": true,
-  "pushDefined": true,
-  "pullDefined": true,
-  "noUndefinedNamesLikely": true
+  "loginWithGoogle": true,
+  "logoutGoogle": true,
+  "buttonBind": true
 }

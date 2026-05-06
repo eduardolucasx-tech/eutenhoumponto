@@ -1,3 +1,25 @@
+Eu tenho um ponto. — Release v1.3.10.1
+
+Build atual: v1.3.10.1
+
+
+================================================================================
+HOTFIX v1.3.10.1 — Restaurar login Google
+================================================================================
+
+Correção mínima:
+- Corrigido erro: loginWithGoogle is not defined.
+- Restauradas funções loginWithGoogle() e logoutGoogle().
+- Nenhuma alteração nos cálculos de banco.
+- Nenhuma alteração visual relevante.
+
+Validação:
+1. Abrir app.
+2. Confirmar topo v1.3.10.1.
+3. Tela de login não deve mostrar erro de carregamento.
+4. Botão Entrar com Google deve abrir login.
+
+
 Eu tenho um ponto. — Release v1.3.10
 
 Build atual: v1.3.10
