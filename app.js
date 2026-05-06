@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.8';
+const APP_VERSION = 'v1.3.9';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -60,6 +60,7 @@ var firestoreFns = null;
 var cloudReady = false;
 var cloudHydrating = false;
 var cloudSyncTimer = null;
+var cloudLastError = '';
 var cloudLastSyncAt = null;
 
 function hasRealFirebaseConfig(){
@@ -205,6 +206,7 @@ function showToast(message, type='info'){
 function syncStatusLabel(){
   if(!state.user) return 'Sem conta conectada';
   if(cloudReady && cloudLastSyncAt) return `Sincronizado às ${hm(cloudLastSyncAt)}`;
+  if(cloudLastError) return 'Local: erro na nuvem';
   return cloudReady ? 'Sincronizado com a nuvem' : 'Salvando localmente';
 }
 function syncStatusClass(){
@@ -235,7 +237,7 @@ function load(){
     return fresh;
   }
 }
-function save(){ state.clientModifiedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(true); render(); }
+function save(){ state.clientModifiedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(true).then(ok => { if(ok) renderHeaderProfile(); }); render(); }
 function model(){ return state.profile ? MODELS[state.profile.model] : null; }
 function day(date=iso(nowSP())){ if(!state.days[date]) state.days[date] = { date, punches:[], note:'' }; return state.days[date]; }
 function punchesOf(dayObj){ return [...(dayObj.punches||[])]; }
@@ -1168,7 +1170,7 @@ function renderProfileScreen(){
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
   screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div><button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Baixar da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${cloudLastError ? `<p class="muted">Último erro: ${cloudLastError}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Baixar da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
   <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
   <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Use o reset apenas se quiser limpar completamente os dados salvos neste navegador.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
 
@@ -1209,7 +1211,7 @@ function renderProfileScreen(){
 
   document.getElementById('syncNow').onclick = async () => {
     const ok = await pushStateToCloud(true);
-    showToast(ok ? 'Dados enviados para a nuvem.' : 'Não foi possível confirmar o envio.', ok ? 'ok' : 'warn');
+    showToast(ok ? 'Dados enviados para a nuvem.' : `Não foi possível enviar: ${cloudLastError || 'erro desconhecido'}`, ok ? 'ok' : 'warn');
     renderProfileScreen();
   };
 

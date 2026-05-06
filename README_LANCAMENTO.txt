@@ -1,3 +1,31 @@
+Eu tenho um ponto. — Release v1.3.9
+
+Build atual: v1.3.9
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.9 — Hotfix envio/baixa da nuvem
+================================================================================
+
+Correção:
+- A v1.3.8 podia ficar mostrando apenas "salvando localmente".
+- Refeito pushStateToCloud para:
+  - inicializar Firebase se necessário;
+  - validar Firestore;
+  - retornar true/false real;
+  - guardar último erro de nuvem.
+- Refeito hydrateFromCloud para baixar sem forçar sobrescrita indevida.
+- Perfil agora mostra o último erro de nuvem quando houver.
+- Botão Enviar para a nuvem mostra mensagem com erro real se falhar.
+
+Validação:
+1. Abrir Perfil.
+2. Tocar em Enviar para a nuvem.
+3. Se funcionar: deve aparecer "Dados enviados para a nuvem".
+4. Se falhar: Perfil mostra o último erro.
+5. No Firestore, conferir users/{uid}/profile/main.
+
+
 Eu tenho um ponto. — Release v1.3.8
 
 Build atual: v1.3.8

@@ -1,7 +1,7 @@
 {
   "version": true,
-  "futureRows": true,
-  "futureImpact": true,
-  "noButtonMinus8": true,
-  "clockIndependentMerge": true
+  "cloudLastError": true,
+  "pushReturns": true,
+  "firestoreValidation": false,
+  "profileError": true
 }
