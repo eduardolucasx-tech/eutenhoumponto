@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10';
+const APP_VERSION = 'v1.3.11';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -521,6 +521,13 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   }
   return saldo;
 }
+
+function cycleAppCalculatedTotal(cycle, selectedYear, selectedMonth){
+  // Saldo calculado pelo app sem usar espelho oficial como base.
+  // Usa apenas saldo inicial configurado + batidas/ausências registradas.
+  return (Number(state.profile?.bankStart) || 0) + cycleConfirmedSaldo(cycle, selectedYear, selectedMonth);
+}
+
 function monthStats(year, month){
   const now = nowSP();
   const first = new Date(year, month, 1); const last = new Date(year, month+1, 0);
@@ -1124,14 +1131,33 @@ function renderMonth(){
     const short = objForShort.absenceType ? absenceLabel(objForShort.absenceType) : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
     return `<div class="day-item ${r.future ? 'future-day' : 'clickable-day'}" ${r.future ? '' : `data-day="${r.date}"`}><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${(!r.future && isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]})) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.future ? '' : (r.saldo<0?'neg':r.saldo>0?'pos':'')}">${r.future ? '--:--' : fmtMin(r.saldo)}</span></div></div><div class="day-sub">${r.future ? 'Dia futuro' : short}</div></div>`;
   }).join('');
-  const bankBody = st.officialBank ?
-    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
-    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
+  const officialBankBody = st.officialBank
+    ? `<div class="kpi-strip two">
+        <div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div>
+        <div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div>
+        <div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div>
+        <div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div>
+        <div class="kpi-mini"><span>Total oficial do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div>
+      </div>`
+    : `<div class="empty-state compact"><strong>Sem saldo oficial importado</strong><span>Importe um espelho para comparar o saldo oficial com o saldo calculado pelo app.</span></div>`;
+
+  const appBankBody = `<div class="kpi-strip two">
+      <div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div>
+      <div class="kpi-mini"><span>Saldo inicial configurado</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div>
+      <div class="kpi-mini"><span>Débito calculado no mês</span><strong class="danger">${fmtMin(st.debitEstimated)}</strong></div>
+      <div class="kpi-mini"><span>Crédito calculado no mês</span><strong class="ok">${fmtMin(st.creditEstimated)}</strong></div>
+      <div class="kpi-mini"><span>Total calculado pelo app</span><strong class="${st.cycleAppTotal<0?'danger':'ok'}">${fmtMin(st.cycleAppTotal)}</strong></div>
+    </div>`;
+
+  const bankBody = `<div class="bank-dual">
+      <div class="bank-block"><h3>Saldo oficial</h3><p class="muted">${st.officialBank ? 'Usa o último espelho importado como base e soma apenas a movimentação posterior registrada no app.' : 'Nenhum espelho oficial importado para este ciclo.'}</p>${officialBankBody}</div>
+      <div class="bank-block"><h3>Saldo calculado pelo app</h3><p class="muted">Ignora o saldo oficial e recalcula o ciclo inteiro a partir das batidas, pendências, folgas banco, faltas e atestados salvos no app.</p>${appBankBody}</div>
+    </div>`;
   const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
   <section class="card"><div class="section-head"><div><h2>Mês</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
-  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>
+  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">Comparativo entre o saldo oficial do espelho e o saldo recalculado pelo app.</p>${bankBody}</section>
   <section class="card"><h2 class="section-title">Registro mensal</h2>${emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml}</section>
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
   <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;

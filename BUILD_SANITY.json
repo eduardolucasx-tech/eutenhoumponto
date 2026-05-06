@@ -1,7 +1,7 @@
 {
   "version": true,
-  "hydrateDefined": true,
-  "pushDefined": true,
-  "pullDefined": true,
-  "noUndefinedNamesLikely": true
+  "cycleAppCalculatedTotal": true,
+  "cycleAppTotal": true,
+  "saldoOficial": true,
+  "saldoCalculado": true
 }

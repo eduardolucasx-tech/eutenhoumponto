@@ -1,3 +1,29 @@
+Eu tenho um ponto. — Release v1.3.11
+
+Build atual: v1.3.11
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.11 — Banco do ciclo com dois saldos
+================================================================================
+
+Mudança:
+- A aba Mês > Banco do ciclo agora mostra dois blocos:
+
+1. Saldo oficial
+   - Usa o último espelho oficial importado como base.
+   - Soma apenas a movimentação posterior registrada no app.
+
+2. Saldo calculado pelo app
+   - Ignora o saldo oficial.
+   - Recalcula o ciclo inteiro usando batidas, marcações pendentes,
+     folga banco, falta e atestado registrados no app.
+   - Usa o saldo inicial configurado no Perfil como base.
+
+Objetivo:
+- Permitir comparar o número oficial da empresa com o número estimado/calculado pelo app.
+
+
 Eu tenho um ponto. — Release v1.3.10
 
 Build atual: v1.3.10
