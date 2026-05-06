@@ -1,2 +1,2 @@
-v1.3.7
-Build: Débito pendente, ausências e sync reforçado
+v1.3.8
+Build: Dias futuros e sync sem relógio

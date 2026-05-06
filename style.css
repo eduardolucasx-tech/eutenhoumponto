@@ -473,3 +473,22 @@ textarea {
   .absence-actions { grid-template-columns:repeat(3,1fr); }
   .absence-actions .secondary { font-size:12px; padding-left:8px; padding-right:8px; }
 }
+
+
+/* v1.3.8 — Dias futuros e botões de ausência */
+.future-day {
+  opacity: .48;
+  filter: grayscale(.35);
+  cursor: default;
+}
+.future-day .bal {
+  color: #7f8ba0;
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.08);
+}
+.future-day .day-sub {
+  color: #7f8ba0;
+}
+.absence-actions .secondary {
+  min-height: 46px;
+}

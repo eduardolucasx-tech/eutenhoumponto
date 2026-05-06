@@ -1,8 +1,7 @@
 {
   "version": true,
-  "selectedRegisterDate": true,
-  "absence": true,
-  "pendingDebit": true,
-  "clickableDay": true,
-  "immediatePush": true
+  "futureRows": true,
+  "futureImpact": true,
+  "noButtonMinus8": true,
+  "clockIndependentMerge": true
 }

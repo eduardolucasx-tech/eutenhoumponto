@@ -1,3 +1,33 @@
+Eu tenho um ponto. — Release v1.3.8
+
+Build atual: v1.3.8
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.8 — Dias futuros e sincronização sem depender do relógio
+================================================================================
+
+Correções:
+- Dias depois da data de hoje não entram mais no saldo negativo.
+- Dias futuros aparecem cinza na aba Mês.
+- Dias futuros mostram "--:--" em vez de saldo negativo.
+- Dias futuros não entram no débito do mês nem no total do ciclo.
+- Botões ajustados para:
+  - Folga banco
+  - Atestado
+  - Falta
+- O cálculo continua:
+  - Folga banco = debita a carga esperada do dia
+  - Atestado = impacto 0
+  - Falta = debita a carga esperada do dia
+- Merge entre dispositivos deixou de depender do horário do celular/PC.
+- O app passa a unir batidas por horário, reduzindo divergência quando um dispositivo está com relógio atrasado.
+
+Observação:
+- Se um dispositivo estiver com relógio errado, a hora exibida de sincronização pode ficar diferente,
+  mas o merge das batidas não deve depender mais dessa diferença.
+
+
 Eu tenho um ponto. — Release v1.3.7
 
 Build atual: v1.3.7
