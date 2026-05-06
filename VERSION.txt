@@ -1,2 +1,2 @@
-v1.3.14
-Build: Cálculo real do ciclo pelo app
+v1.3.15
+Build: Fix varredura do ciclo calculado pelo app

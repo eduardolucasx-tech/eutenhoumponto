@@ -3,7 +3,7 @@ function safeMinutes(value){
   return Number.isFinite(n) ? n : 0;
 }
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.14';
+const APP_VERSION = 'v1.3.15';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -528,14 +528,26 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
 }
 
 
+
+function eachDate(startIso, endIso){
+  const out = [];
+  const start = dateObj(startIso);
+  const end = dateObj(endIso);
+  if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return out;
+  for(const d = new Date(start); d <= end; d.setDate(d.getDate()+1)){
+    out.push(iso(d));
+  }
+  return out;
+}
+
 function endOfSelectedMonth(year, month){
   return new Date(year, month + 1, 0);
 }
 
 function appCycleCalculatedStats(cycle, selectedYear, selectedMonth){
-  const today = dateObj(iso(nowSP()));
-  const selectedEnd = endOfSelectedMonth(selectedYear, selectedMonth);
-  const endLimit = selectedEnd < today ? selectedEnd : today;
+  const todayIso = iso(nowSP());
+  const selectedEnd = iso(endOfSelectedMonth(selectedYear, selectedMonth));
+  const endIso = selectedEnd < todayIso ? selectedEnd : todayIso;
 
   let debit = 0;
   let credit = 0;
@@ -546,39 +558,53 @@ function appCycleCalculatedStats(cycle, selectedYear, selectedMonth){
   let absenceFalta = 0;
   let absenceAtestado = 0;
 
-  for(let d = dateObj(cycle.start); d <= dateObj(cycle.end) && d <= endLimit; d.setDate(d.getDate()+1)){
-    const id = iso(d);
-    const obj = state.days[id] || { date:id, punches:[] };
-    const exp = safeMinutes(expectedMinutes(id));
+  const start = String(cycle.start);
+  const end = String(cycle.end);
 
-    // Dia sem carga prevista não entra no banco.
+  for(const id of eachDate(start, end)){
+    if(id > endIso) break;
+
+    let exp = safeMinutes(expectedMinutes(id));
+    if(exp <= 0){
+      const dow = dateObj(id).getDay();
+      if(dow >= 1 && dow <= 5) exp = 8*60;
+    }
     if(exp <= 0) continue;
 
-    const impact = estimatedBankImpact(obj);
-    const dayDebit = safeMinutes(impact.debit);
-    const dayCredit = safeMinutes(impact.credit);
-    const daySaldo = safeMinutes(impact.saldo);
+    const obj = state.days[id] || { date:id, punches:[] };
+    const p = punchesOf(obj);
+    let dayImpact;
 
-    debit += dayDebit;
-    credit += dayCredit;
-    saldo += daySaldo;
+    if(obj.absenceType === 'atestado'){
+      dayImpact = { debit:0, credit:0, saldo:0 };
+      absenceAtestado++;
+    } else if(obj.absenceType === 'banco'){
+      dayImpact = { debit:exp, credit:0, saldo:-exp };
+      absenceBanco++;
+    } else if(obj.absenceType === 'falta'){
+      dayImpact = { debit:exp, credit:0, saldo:-exp };
+      absenceFalta++;
+    } else if(!p.length || isPending(obj)){
+      // Dia útil sem fechamento até hoje precisa entrar como débito/pending.
+      dayImpact = { debit:exp, credit:0, saldo:-exp };
+      pendingDays++;
+    } else {
+      dayImpact = estimatedBankImpact(obj);
+    }
+
+    debit += safeMinutes(dayImpact.debit);
+    credit += safeMinutes(dayImpact.credit);
+    saldo += safeMinutes(dayImpact.saldo);
     consideredDays++;
-
-    if(isPending(obj)) pendingDays++;
-    if(obj.absenceType === 'banco') absenceBanco++;
-    if(obj.absenceType === 'falta') absenceFalta++;
-    if(obj.absenceType === 'atestado') absenceAtestado++;
   }
 
   const initial = safeMinutes(state.profile?.bankStart);
-  const total = initial + saldo;
-
   return {
     initial,
     debit:safeMinutes(debit),
     credit:safeMinutes(credit),
     saldo:safeMinutes(saldo),
-    total:safeMinutes(total),
+    total:safeMinutes(initial + saldo),
     consideredDays,
     pendingDays,
     absenceBanco,
@@ -1215,6 +1241,8 @@ function renderMonth(){
       <div class="kpi-mini"><span>Total calculado pelo app</span><strong class="${safeMinutes(st.cycleAppTotal)<0?'danger':'ok'}">${fmtSafeBank(st.cycleAppTotal)}</strong></div>
       <div class="kpi-mini"><span>Dias considerados</span><strong>${st.appCycleStats?.consideredDays || 0}</strong></div>
       <div class="kpi-mini"><span>Pendências</span><strong class="warn">${st.appCycleStats?.pendingDays || 0}</strong></div>
+      <div class="kpi-mini"><span>Folga banco/Falta</span><strong>${(st.appCycleStats?.absenceBanco || 0) + (st.appCycleStats?.absenceFalta || 0)}</strong></div>
+      <div class="kpi-mini"><span>Atestado</span><strong>${st.appCycleStats?.absenceAtestado || 0}</strong></div>
     </div>`;
 
   const bankBody = `<div class="bank-dual">

@@ -1,7 +1,7 @@
 {
   "version": true,
-  "appCycleStats": true,
-  "cycleDebitUi": true,
-  "daysConsidered": true,
-  "untilToday": true
+  "eachDate": true,
+  "fallback8h": true,
+  "consideredDays": true,
+  "extraCounters": true
 }

@@ -1,3 +1,31 @@
+Eu tenho um ponto. — Release v1.3.15
+
+Build atual: v1.3.15
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.15 — Fix varredura do ciclo calculado pelo app
+================================================================================
+
+Correção:
+- O cálculo do saldo do app estava retornando 0 dias considerados.
+- Refeito appCycleCalculatedStats para percorrer cada data do ciclo por ISO string.
+- O cálculo agora considera todos os dias úteis do ciclo até hoje:
+  - sem marcação = pendência/débito;
+  - marcação pendente = débito;
+  - folga banco = débito;
+  - falta = débito;
+  - atestado = impacto 0;
+  - batida completa = saldo do dia.
+- Adicionado fallback de 8h em dias úteis caso expectedMinutes retorne 0 indevidamente.
+- A tela agora também mostra contagem de Folga banco/Falta e Atestado.
+
+Validação:
+1. Abrir Mês > Banco do ciclo.
+2. Saldo calculado pelo app deve mostrar Dias considerados maior que 0.
+3. Débito calculado no ciclo deve refletir dias úteis sem marcação/folga/falta.
+
+
 Eu tenho um ponto. — Release v1.3.14
 
 Build atual: v1.3.14
