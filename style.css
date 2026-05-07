@@ -568,3 +568,103 @@ textarea {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+
+/* ==========================================================================
+   v1.4.0 — Manutenção premium / limpeza visual
+   ========================================================================== */
+.import-subnav-card {
+  padding: 10px;
+}
+.import-tabs {
+  grid-template-columns: repeat(3, 1fr);
+}
+.import-tabs button {
+  font-size: 12px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.preview-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.compact-row {
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+.sheet-warning {
+  margin-top: 12px;
+  border-color: rgba(255,184,77,.22);
+  background: rgba(255,184,77,.06);
+}
+.diagnostic-list {
+  display: grid;
+  gap: 10px;
+}
+.diagnostic-row {
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.03);
+  border-radius: 18px;
+  padding: 13px;
+}
+.diagnostic-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+.diagnostic-main strong {
+  color: #f6f8ff;
+}
+.diagnostic-main span {
+  color: #9fb0c6;
+  text-align: right;
+  font-size: 12px;
+}
+.diagnostic-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.diagnostic-grid span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #8d9bb0;
+  font-size: 12px;
+}
+.diagnostic-grid b {
+  color: #f5f8ff;
+}
+.diagnostic-status {
+  margin-top: 10px;
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  color: #c5d1e3;
+  font-size: 12px;
+  font-weight: 700;
+}
+.diagnostic-status.ok {
+  color: var(--green);
+  background: rgba(84,214,122,.08);
+}
+.diagnostic-status.danger {
+  color: var(--red);
+  background: rgba(255,95,87,.08);
+}
+.diagnostic-status.warn {
+  color: var(--yellow);
+  background: rgba(255,184,77,.08);
+}
+@media (max-width: 390px){
+  .diagnostic-grid {
+    grid-template-columns: 1fr;
+  }
+  .import-tabs {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,3 +1,50 @@
+Eu tenho um ponto. — Release v1.4.0
+
+Build atual: v1.4.0
+
+
+================================================================================
+RELEASE v1.4.0 — Manutenção premium
+================================================================================
+
+Objetivo:
+- Melhorar organização visual e diagnóstico sem mexer em login, Firebase ou sync.
+
+Mudanças:
+1. Aba Registrar
+   - Importar agora tem subabas:
+     - Comprovante
+     - Planilha
+     - Espelho
+   - Reduz poluição visual, mostrando apenas um tipo de importação por vez.
+
+2. Planilha
+   - Prévia mais clara.
+   - Aviso de que os dias importados substituem batidas existentes.
+   - Lista de amostra mais organizada.
+
+3. Aba Mês
+   - Adicionado Diagnóstico do mês:
+     - data;
+     - batidas;
+     - esperado;
+     - trabalhado;
+     - saldo;
+     - fonte;
+     - status.
+   - Ajuda a encontrar erro de cálculo sem chute.
+
+4. CSS
+   - Ajustes visuais finos na área de importação, prévia e diagnóstico.
+
+Não alterado:
+- Login Google.
+- Firestore.
+- Sincronização.
+- Regras da Tribuna.
+- Importador já existente.
+
+
 Eu tenho um ponto. — Release v1.3.10.6
 
 Build atual: v1.3.10.6

@@ -1,5 +1,8 @@
 {
   "version": true,
-  "safeMinutes": true,
-  "annualBankStats": true
+  "importSubView": true,
+  "importTabs": true,
+  "diagnostic": true,
+  "noSyncTouched": true,
+  "readme": true
 }

@@ -1,2 +1,2 @@
-v1.3.10.6
-Build: Hotfix safeMinutes
+v1.4.0
+Build: Manutenção premium

@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10.6';
+const APP_VERSION = 'v1.4.0';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -217,6 +217,7 @@ let state = load();
 let tab = 'home';
 let selectedMonthValue = null;
 let registerView = 'manual';
+let importSubView = 'sheet';
 let selectedRegisterDate = null;
 const screenEl = document.getElementById('screen');
 function load(){
@@ -1217,7 +1218,10 @@ function previewCommonSpreadsheetImport(parsed){
   if(!parsed.rows.length){
     return `<h2>Nada importável</h2><p class="muted">${parsed.message || 'Não encontrei linhas com batidas na planilha.'}</p>`;
   }
-  const sample = parsed.rows.slice(0,8).map(r => `<div class="day-item"><div class="day-head"><span>${brDate(r.date)}</span><b>${r.punches.join(' / ')}</b></div></div>`).join('');
+  const sample = parsed.rows.slice(0,10).map(r => {
+    const status = r.punches.length >= requiredPunches() ? 'Completo' : 'Pendente';
+    return `<div class="day-item compact-row"><div class="day-head"><span>${brDate(r.date)}</span><b>${status}</b></div><div class="day-sub">${r.punches.join(' / ')}</div></div>`;
+  }).join('');
   return `<h2>Planilha reconhecida</h2>
     <div class="kpi-strip two">
       <div class="kpi-mini"><span>Dias com batidas</span><strong>${parsed.rows.length}</strong></div>
@@ -1225,8 +1229,8 @@ function previewCommonSpreadsheetImport(parsed){
       <div class="kpi-mini"><span>Incompletos</span><strong class="warn">${parsed.incomplete}</strong></div>
       <div class="kpi-mini"><span>Vazios ignorados</span><strong>${parsed.empty}</strong></div>
     </div>
-    <p class="muted">${parsed.message || "A importação vai lançar apenas as batidas. O app fará todos os cálculos."}</p>
-    <div style="margin-top:12px">${sample}</div>
+    <div class="empty-state compact sheet-warning"><strong>Atenção</strong><span>Ao confirmar, as batidas existentes nos dias encontrados serão substituídas pelas batidas da planilha. Os cálculos continuam sendo feitos pelo app.</span></div>
+    <div class="preview-list">${sample}</div>
     <button class="primary full" id="confirmSheetImport">Importar batidas da planilha</button>`;
 }
 
@@ -1288,14 +1292,15 @@ function renderRegister(){
   const renderImportView = () => {
     const body = document.getElementById('registerBody');
     body.innerHTML = `
-    <section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
-    <section class="card hidden" id="foundBox"></section>
+    <section class="card import-subnav-card"><div class="segmented register-tabs import-tabs" id="importSegment"><button class="${importSubView==='receipt'?'active':''}" data-import="receipt">Comprovante</button><button class="${importSubView==='sheet'?'active':''}" data-import="sheet">Planilha</button><button class="${importSubView==='mirror'?'active':''}" data-import="mirror">Espelho</button></div></section>
+    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
+    <section class="card hidden" id="foundBox"></section></div>
 
-    <section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 02/02/2026\t07:31:00\t13:33:00\t14:33:00\t17:57:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
-    <section class="card hidden" id="commonSheetBox"></section>
+    <div class="import-group ${importSubView==='sheet'?'':'hidden'}" data-import-group="sheet"><section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 02/02/2026\t07:31:00\t13:33:00\t14:33:00\t17:57:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
+    <section class="card hidden" id="commonSheetBox"></section></div>
 
-    <section class="card register-panel import-panel"><div class="form-title"><h2>Espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna.</p></div><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou colar texto extraído</label><textarea id="rawEspelho" rows="5" placeholder="Cole aqui o texto do espelho mensal."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>
-    <section class="card hidden" id="espelhoBox"></section>
+    <div class="import-group ${importSubView==='mirror'?'':'hidden'}" data-import-group="mirror"><section class="card register-panel import-panel"><div class="form-title"><h2>Espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna.</p></div><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou colar texto extraído</label><textarea id="rawEspelho" rows="5" placeholder="Cole aqui o texto do espelho mensal."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>
+    <section class="card hidden" id="espelhoBox"></section></div>
 
     <section class="card subtle-card register-tip"><div class="empty-state compact"><strong>Importação inteligente</strong><span>Comprovantes adicionam batidas individuais. Planilhas comuns importam apenas batidas. O app faz os cálculos.</span></div></section>`;
 
@@ -1312,6 +1317,13 @@ function renderRegister(){
     bindSelectedFile(document.getElementById('proofImage'), document.getElementById('proofImageSelected'), document.getElementById('proofImageName'));
     bindSelectedFile(document.getElementById('pdfEspelho'), document.getElementById('pdfEspelhoSelected'), document.getElementById('pdfEspelhoName'));
     bindSelectedFile(document.getElementById('commonSheet'), document.getElementById('commonSheetSelected'), document.getElementById('commonSheetName'));
+
+    document.querySelectorAll('#importSegment button').forEach(btn => {
+      btn.onclick = () => {
+        importSubView = btn.dataset.import;
+        renderRegister();
+      };
+    });
 
     const parseTextBtn = document.getElementById('parseText');
     const rawImportEl = document.getElementById('rawImport');
@@ -1499,6 +1511,66 @@ function annualBankStats(year){
   };
 }
 
+
+function diagnosticRowForDay(date){
+  const d = state.days[date] || { date, punches:[] };
+  const exp = expectedMinutes(date);
+  const worked = workedMinutes(d, false);
+  const impact = estimatedBankImpact(d);
+  const status = jornadaStatus(d, false);
+  const source = (d.punches || []).some(p => p.source === 'spreadsheet_common' || p.source === 'spreadsheet_headerless') ? 'Planilha'
+    : (d.punches || []).some(p => p.source === 'pdf_espelho') ? 'Espelho'
+    : (d.punches || []).some(p => p.source === 'typed') ? 'Manual'
+    : (d.punches || []).some(p => p.source === 'button') ? 'Botão'
+    : d.absenceType ? absenceLabel(d.absenceType)
+    : 'Sem fonte';
+  return {
+    date,
+    expected: exp,
+    worked,
+    saldo: impact.saldo,
+    status: status.text,
+    cls: status.cls,
+    punches: punchesOf(d).map(p => p.time).join(' / ') || '--',
+    source
+  };
+}
+
+function diagnosticMonthRows(year, month){
+  const days = [];
+  const max = new Date(year, month + 1, 0).getDate();
+  const today = iso(nowSP());
+  for(let dayNum=1; dayNum<=max; dayNum++){
+    const date = `${year}-${pad(month+1)}-${pad(dayNum)}`;
+    if(date > today) break;
+    const expected = expectedMinutes(date);
+    const hasData = !!state.days[date] && ((state.days[date].punches || []).length || state.days[date].absenceType || state.days[date].note);
+    if(expected > 0 || hasData) days.push(diagnosticRowForDay(date));
+  }
+  return days;
+}
+
+function renderMonthDiagnostic(year, month){
+  const rows = diagnosticMonthRows(year, month);
+  if(!rows.length){
+    return `<section class="card"><h2 class="section-title">Diagnóstico do mês</h2><div class="empty-state"><strong>Sem dados para diagnosticar</strong><span>Registre manualmente ou importe uma planilha para ver o detalhe por dia.</span></div></section>`;
+  }
+  const html = rows.map(r => `<div class="diagnostic-row">
+    <div class="diagnostic-main">
+      <strong>${brDate(r.date)}</strong>
+      <span>${r.punches}</span>
+    </div>
+    <div class="diagnostic-grid">
+      <span>Esperado <b>${fmtMin(r.expected)}</b></span>
+      <span>Trabalhado <b>${fmtMin(r.worked)}</b></span>
+      <span>Saldo <b class="${r.saldo<0?'danger':'ok'}">${fmtMin(r.saldo)}</b></span>
+      <span>Fonte <b>${r.source}</b></span>
+    </div>
+    <div class="diagnostic-status ${r.cls}">${r.status}</div>
+  </div>`).join('');
+  return `<section class="card"><h2 class="section-title">Diagnóstico do mês</h2><p class="muted">Detalhe por dia para conferir se as batidas importadas e os cálculos fazem sentido.</p><div class="diagnostic-list">${html}</div></section>`;
+}
+
 function renderMonth(){
   const n = nowSP();
   const currentValue = `${n.getFullYear()}-${pad(n.getMonth()+1)}`;
@@ -1527,6 +1599,7 @@ function renderMonth(){
     ? `<section class="card"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
     : `<section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
   <section class="card"><h2 class="section-title">Registro mensal</h2>${emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml}</section>
+  ${renderMonthDiagnostic(year, month)}
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
   <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;
   monthPicker.onchange = () => { selectedMonthValue = monthPicker.value; renderMonth(); };
