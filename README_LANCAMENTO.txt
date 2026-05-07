@@ -1,3 +1,25 @@
+Eu tenho um ponto. — Release v1.3.10.6
+
+Build atual: v1.3.10.6
+
+
+================================================================================
+HOTFIX v1.3.10.6 — Corrigir safeMinutes
+================================================================================
+
+Correção mínima:
+- Corrigido erro: safeMinutes is not defined.
+- Adicionada função safeMinutes() usada pelo Banco anual do modo Tradicional.
+- Nenhuma alteração em sincronização.
+- Nenhuma alteração no importador.
+- Nenhuma alteração visual.
+
+Validação:
+1. Abrir app no modo Tradicional.
+2. Ir em Mês.
+3. A tela não deve mais cair em "Carregamento interrompido".
+
+
 Eu tenho um ponto. — Release v1.3.10.5
 
 Build atual: v1.3.10.5

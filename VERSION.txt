@@ -1,2 +1,2 @@
-v1.3.10.5
-Build: Banco anual simples no modo Tradicional
+v1.3.10.6
+Build: Hotfix safeMinutes

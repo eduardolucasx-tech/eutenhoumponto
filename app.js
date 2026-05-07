@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10.5';
+const APP_VERSION = 'v1.3.10.6';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1443,6 +1443,12 @@ function eachDate(startIso, endIso){
     out.push(iso(d));
   }
   return out;
+}
+
+
+function safeMinutes(value){
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function annualBankStats(year){

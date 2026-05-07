@@ -1,7 +1,5 @@
 {
   "version": true,
-  "annualBankStats": true,
-  "bankAnnualUi": true,
-  "traditionalOnly": true,
-  "eachDate": true
+  "safeMinutes": true,
+  "annualBankStats": true
 }
