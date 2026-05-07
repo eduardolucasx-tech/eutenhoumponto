@@ -1,3 +1,38 @@
+Eu tenho um ponto. — Release v1.3.10.3
+
+Build atual: v1.3.10.3
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.10.3 — Registrar limpo + planilha por texto
+================================================================================
+
+Mudanças:
+- Limpeza visual geral na aba Registrar.
+- Organização melhor entre:
+  - Comprovante individual
+  - Planilha comum
+  - Espelho oficial
+- Planilha comum agora pode ser importada de duas formas:
+  1. Enviando arquivo XLSX/XLS/CSV
+  2. Copiando e colando texto do Google Sheets ou Excel
+- O texto colado é tratado por tabulação, ponto e vírgula ou espaços múltiplos.
+- O app continua importando apenas as batidas:
+  - Data
+  - Entrada
+  - Saída almoço
+  - Volta almoço
+  - Saída final
+- Cálculos continuam sendo feitos pelo app.
+
+Validação:
+1. Registrar > Importar.
+2. Colar linhas copiadas da planilha no campo Planilha comum.
+3. Tocar em Ler texto colado.
+4. Conferir prévia.
+5. Confirmar importação.
+
+
 Eu tenho um ponto. — Release v1.3.10.2
 
 Build atual: v1.3.10.2

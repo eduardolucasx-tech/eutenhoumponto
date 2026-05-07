@@ -500,3 +500,71 @@ textarea {
   text-align: right;
   font-size: 12px;
 }
+
+
+/* v1.3.10.3 — Limpeza visual da aba Registrar */
+.register-hero {
+  padding-bottom: 14px;
+}
+.section-head.compact {
+  margin-bottom: 14px;
+}
+.register-body {
+  display: grid;
+  gap: 12px;
+}
+.register-panel {
+  display: grid;
+  gap: 12px;
+}
+.form-title h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  letter-spacing: -.04em;
+}
+.form-title .muted {
+  margin: 0;
+}
+.form-grid.single {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.time-field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.time-field {
+  min-width: 0;
+}
+.action-stack {
+  display: grid;
+  gap: 9px;
+  margin-top: 2px;
+}
+.import-panel textarea {
+  min-height: 110px;
+}
+.import-panel .small-note {
+  font-size: 12px;
+  margin-top: -2px;
+}
+.divider {
+  height: 1px;
+  background: rgba(255,255,255,.07);
+  margin: 2px 0;
+}
+.compact-picker {
+  min-height: 72px;
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+.register-tip {
+  opacity: .92;
+}
+@media (min-width: 391px){
+  .time-field-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

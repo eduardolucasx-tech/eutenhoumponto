@@ -1,7 +1,7 @@
 {
   "version": true,
-  "sheetParser": true,
-  "sheetUi": true,
-  "sheetJs": true,
-  "confirm": true
+  "pasteHelper": true,
+  "pasteUi": true,
+  "registerCleanup": true,
+  "sheetTextHandler": true
 }

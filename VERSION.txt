@@ -1,2 +1,2 @@
-v1.3.10.2
-Build: Importador de planilha comum
+v1.3.10.3
+Build: Registrar limpo + planilha por texto
