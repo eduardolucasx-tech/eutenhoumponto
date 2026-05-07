@@ -1,3 +1,32 @@
+Eu tenho um ponto. — Release v1.3.10.4
+
+Build atual: v1.3.10.4
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.10.4 — Texto sem cabeçalho para planilha comum
+================================================================================
+
+Mudança:
+- O importador de planilha comum agora reconhece texto sem cabeçalho com 5 colunas fixas:
+  Data | Entrada | Saída almoço | Volta almoço | Saída final
+
+Exemplo aceito:
+02/02/2026    07:31:00    13:33:00    14:33:00    17:57:00
+
+Mapeamento:
+- Coluna 1: Data
+- Coluna 2: Entrada
+- Coluna 3: Saída almoço
+- Coluna 4: Volta almoço
+- Coluna 5: Saída final
+
+Observação:
+- Em modelos Tradicional/Personalizável, importa as quatro batidas.
+- Em modelos Tribuna, importa Entrada e Saída final.
+- O app continua ignorando cálculos da planilha e calculando tudo internamente.
+
+
 Eu tenho um ponto. — Release v1.3.10.3
 
 Build atual: v1.3.10.3

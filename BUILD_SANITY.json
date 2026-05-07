@@ -1,7 +1,7 @@
 {
   "version": true,
-  "pasteHelper": true,
-  "pasteUi": true,
-  "registerCleanup": true,
-  "sheetTextHandler": true
+  "headerlessParser": true,
+  "fallback": true,
+  "placeholder": true,
+  "message": true
 }

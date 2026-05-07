@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10.3';
+const APP_VERSION = 'v1.3.10.4';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1137,9 +1137,51 @@ function spreadsheetMatrixFromPastedText(text){
     .filter(row => row.length);
 }
 
+
+function parseHeaderlessPunchMatrix(matrix){
+  const rows = [];
+  let complete = 0, incomplete = 0, empty = 0;
+
+  for(const row of matrix){
+    if(!row || row.length < 2) continue;
+    const date = parseSpreadsheetDate(row[0]);
+    if(!date) continue;
+
+    const entry = parseSpreadsheetTime(row[1]);
+    const lunchOut = parseSpreadsheetTime(row[2]);
+    const lunchIn = parseSpreadsheetTime(row[3]);
+    const exit = parseSpreadsheetTime(row[4]);
+
+    const auto = model()?.punchMode === 'autoLunch';
+    const punches = auto
+      ? [entry, exit].filter(Boolean)
+      : [entry, lunchOut, lunchIn, exit].filter(Boolean);
+
+    if(!punches.length){ empty++; continue; }
+    if((auto && punches.length >= 2) || (!auto && punches.length >= 4)) complete++;
+    else incomplete++;
+
+    rows.push({
+      date,
+      punches,
+      rawValues: { entry, lunchOut, lunchIn, exit },
+      source:'spreadsheet_headerless'
+    });
+  }
+
+  return { rows, complete, incomplete, empty, message:'' };
+}
+
 function parseCommonSpreadsheetMatrix(matrix){
   const found = findSpreadsheetColumns(matrix);
-  if(!found) return { rows:[], complete:0, incomplete:0, empty:0, message:'Não consegui identificar colunas de Data, Entrada e Saída final.' };
+  if(!found){
+    const fallback = parseHeaderlessPunchMatrix(matrix);
+    if(fallback.rows.length){
+      fallback.message = 'Formato sem cabeçalho reconhecido como Data, Entrada, Saída almoço, Volta almoço e Saída final.';
+      return fallback;
+    }
+    return { rows:[], complete:0, incomplete:0, empty:0, message:'Não consegui identificar colunas de Data, Entrada e Saída final.' };
+  }
 
   const { headerIndex, col } = found;
   const rows = [];
@@ -1183,7 +1225,7 @@ function previewCommonSpreadsheetImport(parsed){
       <div class="kpi-mini"><span>Incompletos</span><strong class="warn">${parsed.incomplete}</strong></div>
       <div class="kpi-mini"><span>Vazios ignorados</span><strong>${parsed.empty}</strong></div>
     </div>
-    <p class="muted">A importação vai lançar apenas as batidas. O app fará todos os cálculos.</p>
+    <p class="muted">${parsed.message || "A importação vai lançar apenas as batidas. O app fará todos os cálculos."}</p>
     <div style="margin-top:12px">${sample}</div>
     <button class="primary full" id="confirmSheetImport">Importar batidas da planilha</button>`;
 }
@@ -1249,7 +1291,7 @@ function renderRegister(){
     <section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
     <section class="card hidden" id="foundBox"></section>
 
-    <section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel."></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
+    <section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 02/02/2026\t07:31:00\t13:33:00\t14:33:00\t17:57:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
     <section class="card hidden" id="commonSheetBox"></section>
 
     <section class="card register-panel import-panel"><div class="form-title"><h2>Espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna.</p></div><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou colar texto extraído</label><textarea id="rawEspelho" rows="5" placeholder="Cole aqui o texto do espelho mensal."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>

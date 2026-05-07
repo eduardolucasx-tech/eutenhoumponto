@@ -1,2 +1,2 @@
-v1.3.10.3
-Build: Registrar limpo + planilha por texto
+v1.3.10.4
+Build: Texto sem cabeçalho para planilha comum
