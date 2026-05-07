@@ -1,2 +1,2 @@
-v1.3.10.1
-Build: Hotfix login Google
+v1.3.10.2
+Build: Importador de planilha comum

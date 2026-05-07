@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10.1';
+const APP_VERSION = 'v1.3.10.2';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1018,6 +1018,168 @@ async function extractPdfText(file){
   return text;
 }
 
+
+async function loadSheetJs(){
+  if(window.XLSX) return window.XLSX;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Não foi possível carregar o leitor de XLSX.'));
+    document.head.appendChild(script);
+  });
+  return window.XLSX;
+}
+
+function normalizeHeader(value){
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,' ')
+    .trim();
+}
+
+function parseSpreadsheetDate(value){
+  if(value === null || value === undefined || value === '') return null;
+  if(value instanceof Date && !Number.isNaN(value.getTime())) return iso(value);
+  if(typeof value === 'number'){
+    // Excel serial date
+    const base = new Date(Date.UTC(1899, 11, 30));
+    const d = new Date(base.getTime() + value * 86400000);
+    return iso(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  }
+  const s = String(value).trim();
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?$/);
+  if(m){
+    const day = pad(Number(m[1]));
+    const month = pad(Number(m[2]));
+    let year = m[3] ? Number(m[3]) : nowSP().getFullYear();
+    if(year < 100) year += 2000;
+    return `${year}-${month}-${day}`;
+  }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+
+function parseSpreadsheetTime(value){
+  if(value === null || value === undefined || value === '') return '';
+  if(value instanceof Date && !Number.isNaN(value.getTime())) return `${pad(value.getHours())}:${pad(value.getMinutes())}`;
+  if(typeof value === 'number'){
+    if(value <= 0) return '';
+    const total = Math.round((value % 1) * 24 * 60);
+    return `${pad(Math.floor(total/60))}:${pad(total%60)}`;
+  }
+  const s = String(value).trim();
+  if(!s || /^0+$/.test(s)) return '';
+  const m = s.match(/(\d{1,2})[:hH](\d{2})/);
+  if(m) return `${pad(Number(m[1]))}:${pad(Number(m[2]))}`;
+  return '';
+}
+
+function findSpreadsheetColumns(matrix){
+  const headerCandidates = matrix.slice(0, Math.min(matrix.length, 12));
+  for(let headerIndex=0; headerIndex<headerCandidates.length; headerIndex++){
+    const row = headerCandidates[headerIndex].map(normalizeHeader);
+    const col = {};
+    row.forEach((h, i) => {
+      if(!col.date && (h === 'data' || h.includes('data'))) col.date = i;
+      if(!col.entry && (h === 'entrada' || h.includes('entrada'))) col.entry = i;
+      if(!col.lunchOut && (h.includes('saida almoco') || h.includes('sai almoco') || h.includes('saida intervalo'))) col.lunchOut = i;
+      if(!col.lunchIn && (h.includes('volta almoco') || h.includes('retorno almoco') || h.includes('ret almoco') || h.includes('volta intervalo') || h.includes('retorno intervalo'))) col.lunchIn = i;
+      if(!col.exit && (h.includes('saida final') || h === 'saida' || h.includes('saida expediente') || h.includes('saida final expediente'))) col.exit = i;
+    });
+
+    // Se houver duas colunas "Saída", a primeira tende a ser almoço e a segunda saída final.
+    const saidas = row.map((h,i)=>({h,i})).filter(x => x.h === 'saida' || x.h.includes('saida'));
+    if(saidas.length >= 2){
+      if(col.lunchOut === undefined) col.lunchOut = saidas[0].i;
+      if(col.exit === undefined || col.exit === saidas[0].i) col.exit = saidas[saidas.length-1].i;
+    }
+
+    if(col.date !== undefined && col.entry !== undefined && col.exit !== undefined){
+      return { headerIndex, col };
+    }
+  }
+  return null;
+}
+
+async function spreadsheetMatrixFromFile(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext === 'csv'){
+    const text = await file.text();
+    return text.split(/\r?\n/).map(line => line.split(/;|,/).map(x => x.trim()));
+  }
+  const XLSX = await loadSheetJs();
+  const data = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type:'array', cellDates:true });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json(sheet, { header:1, raw:true, defval:'' });
+}
+
+function parseCommonSpreadsheetMatrix(matrix){
+  const found = findSpreadsheetColumns(matrix);
+  if(!found) return { rows:[], complete:0, incomplete:0, empty:0, message:'Não consegui identificar colunas de Data, Entrada e Saída final.' };
+
+  const { headerIndex, col } = found;
+  const rows = [];
+  let complete = 0, incomplete = 0, empty = 0;
+
+  for(const row of matrix.slice(headerIndex + 1)){
+    const date = parseSpreadsheetDate(row[col.date]);
+    if(!date) continue;
+
+    const rawValues = {
+      entry: parseSpreadsheetTime(row[col.entry]),
+      lunchOut: col.lunchOut !== undefined ? parseSpreadsheetTime(row[col.lunchOut]) : '',
+      lunchIn: col.lunchIn !== undefined ? parseSpreadsheetTime(row[col.lunchIn]) : '',
+      exit: parseSpreadsheetTime(row[col.exit])
+    };
+
+    const auto = model()?.punchMode === 'autoLunch';
+    const punches = auto
+      ? [rawValues.entry, rawValues.exit].filter(Boolean)
+      : [rawValues.entry, rawValues.lunchOut, rawValues.lunchIn, rawValues.exit].filter(Boolean);
+
+    if(!punches.length){ empty++; continue; }
+    if((auto && punches.length >= 2) || (!auto && punches.length >= 4)) complete++;
+    else incomplete++;
+
+    rows.push({ date, punches, rawValues, source:'spreadsheet_common' });
+  }
+
+  return { rows, complete, incomplete, empty, message:'' };
+}
+
+function previewCommonSpreadsheetImport(parsed){
+  if(!parsed.rows.length){
+    return `<h2>Nada importável</h2><p class="muted">${parsed.message || 'Não encontrei linhas com batidas na planilha.'}</p>`;
+  }
+  const sample = parsed.rows.slice(0,8).map(r => `<div class="day-item"><div class="day-head"><span>${brDate(r.date)}</span><b>${r.punches.join(' / ')}</b></div></div>`).join('');
+  return `<h2>Planilha reconhecida</h2>
+    <div class="kpi-strip two">
+      <div class="kpi-mini"><span>Dias com batidas</span><strong>${parsed.rows.length}</strong></div>
+      <div class="kpi-mini"><span>Completos</span><strong class="ok">${parsed.complete}</strong></div>
+      <div class="kpi-mini"><span>Incompletos</span><strong class="warn">${parsed.incomplete}</strong></div>
+      <div class="kpi-mini"><span>Vazios ignorados</span><strong>${parsed.empty}</strong></div>
+    </div>
+    <p class="muted">A importação vai lançar apenas as batidas. O app fará todos os cálculos.</p>
+    <div style="margin-top:12px">${sample}</div>
+    <button class="primary full" id="confirmSheetImport">Importar batidas da planilha</button>`;
+}
+
+function applyCommonSpreadsheetImport(parsed){
+  parsed.rows.forEach(r => {
+    const d = day(r.date);
+    d.punches = r.punches.map((time, index) => ({ time, source:'spreadsheet_common', slot:index, createdAt:new Date().toISOString() }));
+    d.absenceType = null;
+    d.closed = false;
+    d.note = d.note || '';
+  });
+  save();
+}
+
 function renderRegister(){
   const date = selectedRegisterDate || iso(nowSP());
   const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
@@ -1069,7 +1231,9 @@ function renderRegister(){
     <section class="card hidden" id="foundBox"></section>
     <section class="card"><h2>Importar espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna. Ele importa as batidas e usa o bloco oficial Banco de Horas como referência principal do saldo.</p><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou cole o texto extraído do PDF</label><textarea id="rawEspelho" rows="6" placeholder="Cole aqui o texto do espelho mensal, se o leitor de PDF não carregar."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>
     <section class="card hidden" id="espelhoBox"></section>
-    <section class="card subtle-card"><div class="empty-state compact"><strong>Importação inteligente</strong><span>Comprovantes adicionam batidas individuais. O espelho oficial também atualiza a referência do banco de horas do mês.</span></div></section>`;
+    <section class="card"><h2>Importar planilha comum</h2><p class="muted">Lê Data, Entrada, Saída almoço, Volta almoço e Saída final. O app importa só as batidas e faz os cálculos.</p><label>Arquivo da planilha</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler planilha comum</button></section>
+    <section class="card hidden" id="commonSheetBox"></section>
+    <section class="card subtle-card"><div class="empty-state compact"><strong>Importação inteligente</strong><span>Comprovantes adicionam batidas individuais. Planilhas comuns importam apenas batidas. O app faz os cálculos.</span></div></section>`;
 
     const bindSelectedFile = (inputEl, boxEl, nameEl) => {
       if(!inputEl || !boxEl || !nameEl) return;
@@ -1083,6 +1247,7 @@ function renderRegister(){
     };
     bindSelectedFile(document.getElementById('proofImage'), document.getElementById('proofImageSelected'), document.getElementById('proofImageName'));
     bindSelectedFile(document.getElementById('pdfEspelho'), document.getElementById('pdfEspelhoSelected'), document.getElementById('pdfEspelhoName'));
+    bindSelectedFile(document.getElementById('commonSheet'), document.getElementById('commonSheetSelected'), document.getElementById('commonSheetName'));
 
     const parseTextBtn = document.getElementById('parseText');
     const rawImportEl = document.getElementById('rawImport');
@@ -1092,6 +1257,9 @@ function renderRegister(){
     const readPdfEspelhoBtn = document.getElementById('readPdfEspelho');
     const rawEspelhoEl = document.getElementById('rawEspelho');
     const pdfEspelhoEl = document.getElementById('pdfEspelho');
+    const commonSheetEl = document.getElementById('commonSheet');
+    const commonSheetBoxEl = document.getElementById('commonSheetBox');
+    const readCommonSheetBtn = document.getElementById('readCommonSheet');
 
     if(parseTextBtn) parseTextBtn.onclick = () => {
       const text = rawImportEl?.value || '';
@@ -1131,6 +1299,38 @@ function renderRegister(){
         espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${e.message}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
       }
     };
+
+    if(readCommonSheetBtn){
+      readCommonSheetBtn.onclick = async () => {
+        const file = commonSheetEl?.files?.[0];
+        if(!file){
+          commonSheetBoxEl.className = 'card result-card';
+          commonSheetBoxEl.innerHTML = '<h2>Selecione uma planilha</h2><p class="muted">Escolha um arquivo XLSX, XLS ou CSV.</p>';
+          return;
+        }
+        commonSheetBoxEl.className = 'card result-card';
+        commonSheetBoxEl.innerHTML = '<h2>Lendo planilha</h2><p class="muted">Aguarde...</p>';
+        try{
+          const matrix = await spreadsheetMatrixFromFile(file);
+          const parsed = parseCommonSpreadsheetMatrix(matrix);
+          commonSheetBoxEl.className = 'card result-card';
+          commonSheetBoxEl.innerHTML = previewCommonSpreadsheetImport(parsed);
+          commonSheetBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
+          const confirmBtn = document.getElementById('confirmSheetImport');
+          if(confirmBtn){
+            confirmBtn.onclick = () => {
+              applyCommonSpreadsheetImport(parsed);
+              showToast('Batidas da planilha importadas.', 'ok');
+              tab = 'month';
+              render();
+            };
+          }
+        }catch(err){
+          commonSheetBoxEl.className = 'card result-card';
+          commonSheetBoxEl.innerHTML = `<h2>Não consegui ler a planilha</h2><p class="muted">${err?.message || err}</p>`;
+        }
+      };
+    }
   };
 
   document.querySelectorAll('#registerSegment button').forEach(btn => btn.onclick = () => { registerView = btn.dataset.view; renderRegister(); });

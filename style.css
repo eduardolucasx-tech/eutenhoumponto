@@ -492,3 +492,11 @@ textarea {
 .absence-actions .secondary {
   min-height: 46px;
 }
+
+
+/* v1.3.10.2 — Importador de planilha comum */
+#commonSheetBox .day-item b {
+  max-width: 100%;
+  text-align: right;
+  font-size: 12px;
+}

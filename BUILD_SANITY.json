@@ -1,6 +1,7 @@
 {
   "version": true,
-  "loginWithGoogle": true,
-  "logoutGoogle": true,
-  "buttonBind": true
+  "sheetParser": true,
+  "sheetUi": true,
+  "sheetJs": true,
+  "confirm": true
 }

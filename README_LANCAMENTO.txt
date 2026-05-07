@@ -1,3 +1,36 @@
+Eu tenho um ponto. — Release v1.3.10.2
+
+Build atual: v1.3.10.2
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.10.2 — Importador de planilha comum
+================================================================================
+
+Mudança focada:
+- Adicionada opção Registrar > Importar > Importar planilha comum.
+- Aceita XLSX, XLS e CSV.
+- A planilha é usada apenas como fonte das batidas.
+- O app ignora colunas de cálculo como horas trabalhadas, previstas, saldo e total.
+- Mapeamento:
+  - Data -> dia da marcação
+  - Entrada -> 1ª batida
+  - Saída almoço -> 2ª batida
+  - Volta almoço / Retorno almoço -> 3ª batida
+  - Saída / Saída final -> 4ª batida
+- Em modelos Tribuna com almoço automático, usa apenas Entrada e Saída final.
+- Em modelos Tradicional/Personalizável, usa as quatro batidas.
+- Mostra prévia antes de confirmar.
+
+Validação:
+1. Registrar > Importar.
+2. Selecionar XLSX/CSV comum.
+3. Ler planilha comum.
+4. Conferir prévia.
+5. Confirmar importação.
+6. Ir para Mês e deixar o app calcular.
+
+
 Eu tenho um ponto. — Release v1.3.10.1
 
 Build atual: v1.3.10.1
