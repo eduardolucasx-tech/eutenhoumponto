@@ -1,3 +1,29 @@
+Eu tenho um ponto. — Release v1.4.1
+
+Build atual: v1.4.1
+
+
+================================================================================
+RELEASE v1.4.1 — Gavetas deslizantes na aba Mês
+================================================================================
+
+Mudanças:
+- A aba Mês agora usa gavetas deslizantes para:
+  1. Registro mensal
+  2. Diagnóstico do mês
+- Cada gaveta mostra um contador de dias.
+- O usuário pode abrir e fechar as seções para deixar a navegação mais limpa.
+- Registro mensal abre por padrão.
+- Diagnóstico do mês começa recolhido por padrão.
+
+Não alterado:
+- Sincronização
+- Firebase
+- Login Google
+- Regras de cálculo
+- Importadores
+
+
 Eu tenho um ponto. — Release v1.4.0
 
 Build atual: v1.4.0

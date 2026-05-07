@@ -1,2 +1,2 @@
-v1.4.0
-Build: Manutenção premium
+v1.4.1
+Build: Gavetas deslizantes na aba Mês

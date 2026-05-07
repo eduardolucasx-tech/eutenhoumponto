@@ -668,3 +668,87 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ==========================================================================
+   v1.4.1 — Gavetas deslizantes na aba Mês
+   ========================================================================== */
+.drawer-card {
+  overflow: hidden;
+}
+.drawer-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.drawer-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -.04em;
+  color: #f5f8ff;
+}
+.drawer-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.drawer-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+  color: #9fb0c6;
+  font-size: 12px;
+  font-weight: 700;
+}
+.drawer-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+  color: #eaf1ff;
+  font-size: 20px;
+  line-height: 1;
+}
+.drawer-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height .34s ease, opacity .24s ease, margin-top .24s ease;
+  margin-top: 0;
+}
+.drawer-body.open {
+  max-height: 5000px;
+  opacity: 1;
+  margin-top: 14px;
+}
+.drawer-inner {
+  display: grid;
+  gap: 12px;
+}
+@media (max-width: 420px){
+  .drawer-title {
+    font-size: 20px;
+  }
+  .drawer-meta {
+    font-size: 11px;
+    padding: 0 8px;
+  }
+}

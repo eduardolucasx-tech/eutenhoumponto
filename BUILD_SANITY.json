@@ -1,8 +1,8 @@
 {
   "version": true,
-  "importSubView": true,
-  "importTabs": true,
-  "diagnostic": true,
-  "noSyncTouched": true,
-  "readme": true
+  "monthDrawers": true,
+  "renderMonthDrawer": true,
+  "bindMonthDrawers": true,
+  "recordsDrawer": true,
+  "diagnosticDrawer": true
 }

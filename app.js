@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.4.0';
+const APP_VERSION = 'v1.4.1';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -218,6 +218,7 @@ let tab = 'home';
 let selectedMonthValue = null;
 let registerView = 'manual';
 let importSubView = 'sheet';
+let monthDrawers = { records:true, diagnostic:false };
 let selectedRegisterDate = null;
 const screenEl = document.getElementById('screen');
 function load(){
@@ -1550,10 +1551,37 @@ function diagnosticMonthRows(year, month){
   return days;
 }
 
+
+function renderMonthDrawer(key, title, content, meta=''){
+  const open = monthDrawers[key] !== false;
+  return `<section class="card drawer-card ${open?'open':''}">
+    <button class="drawer-toggle" type="button" data-drawer-toggle="${key}">
+      <span class="drawer-title">${title}</span>
+      <span class="drawer-right">
+        ${meta ? `<span class="drawer-meta">${meta}</span>` : ''}
+        <span class="drawer-icon">${open ? '−' : '+'}</span>
+      </span>
+    </button>
+    <div class="drawer-body ${open?'open':''}" data-drawer-body="${key}">
+      <div class="drawer-inner">${content}</div>
+    </div>
+  </section>`;
+}
+
+function bindMonthDrawers(){
+  document.querySelectorAll('[data-drawer-toggle]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.drawerToggle;
+      monthDrawers[key] = !(monthDrawers[key] !== false);
+      renderMonth();
+    };
+  });
+}
 function renderMonthDiagnostic(year, month){
   const rows = diagnosticMonthRows(year, month);
+  const countMeta = `${rows.length} dia${rows.length === 1 ? '' : 's'}`;
   if(!rows.length){
-    return `<section class="card"><h2 class="section-title">Diagnóstico do mês</h2><div class="empty-state"><strong>Sem dados para diagnosticar</strong><span>Registre manualmente ou importe uma planilha para ver o detalhe por dia.</span></div></section>`;
+    return renderMonthDrawer('diagnostic', 'Diagnóstico do mês', `<div class="empty-state"><strong>Sem dados para diagnosticar</strong><span>Registre manualmente ou importe uma planilha para ver o detalhe por dia.</span></div>`, countMeta);
   }
   const html = rows.map(r => `<div class="diagnostic-row">
     <div class="diagnostic-main">
@@ -1568,7 +1596,7 @@ function renderMonthDiagnostic(year, month){
     </div>
     <div class="diagnostic-status ${r.cls}">${r.status}</div>
   </div>`).join('');
-  return `<section class="card"><h2 class="section-title">Diagnóstico do mês</h2><p class="muted">Detalhe por dia para conferir se as batidas importadas e os cálculos fazem sentido.</p><div class="diagnostic-list">${html}</div></section>`;
+  return renderMonthDrawer('diagnostic', 'Diagnóstico do mês', `<p class="muted">Detalhe por dia para conferir se as batidas importadas e os cálculos fazem sentido.</p><div class="diagnostic-list">${html}</div>`, countMeta);
 }
 
 function renderMonth(){
@@ -1598,11 +1626,12 @@ function renderMonth(){
   ${isTraditionalModel()
     ? `<section class="card"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
     : `<section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
-  <section class="card"><h2 class="section-title">Registro mensal</h2>${emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml}</section>
+  ${renderMonthDrawer('records', 'Registro mensal', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml, `${st.rows.length} dia${st.rows.length===1?'':'s'}`)}
   ${renderMonthDiagnostic(year, month)}
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
   <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;
   monthPicker.onchange = () => { selectedMonthValue = monthPicker.value; renderMonth(); };
+  bindMonthDrawers();
   document.querySelectorAll('.clickable-day').forEach(item => item.onclick = () => { selectedRegisterDate = item.dataset.day; registerView = 'manual'; tab = 'register'; renderRegister(); });
   csvBtn.onclick = ()=>{ exportMonthCsv(year,month); showToast('CSV exportado.', 'ok'); };
   excelBtn.onclick = ()=>{ exportMonthExcel(year,month); showToast('Arquivo Excel exportado.', 'ok'); };
