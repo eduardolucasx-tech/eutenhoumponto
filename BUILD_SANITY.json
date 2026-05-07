@@ -1,7 +1,7 @@
 {
   "version": true,
-  "headerlessParser": true,
-  "fallback": true,
-  "placeholder": true,
-  "message": true
+  "annualBankStats": true,
+  "bankAnnualUi": true,
+  "traditionalOnly": true,
+  "eachDate": true
 }

@@ -1,3 +1,27 @@
+Eu tenho um ponto. — Release v1.3.10.5
+
+Build atual: v1.3.10.5
+
+
+================================================================================
+ATUALIZAÇÃO v1.3.10.5 — Banco anual simples no modo Tradicional
+================================================================================
+
+Mudança:
+- No modo Tradicional, o banco passa a ser anual e simples.
+- A aba Mês mostra "Banco anual" em vez de "Banco do ciclo".
+- Regra:
+  - período: 01/01 até hoje;
+  - soma todas as horas positivas;
+  - soma todas as horas negativas;
+  - saldo anual = positivas - negativas.
+- Atestado entra como 00:00.
+- Folga banco e falta entram como negativo da carga esperada.
+- Marcação pendente entra como negativo da carga esperada.
+- Dias futuros não entram.
+- Nada foi alterado nos modelos Tribuna.
+
+
 Eu tenho um ponto. — Release v1.3.10.4
 
 Build atual: v1.3.10.4

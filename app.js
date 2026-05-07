@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.3.10.4';
+const APP_VERSION = 'v1.3.10.5';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1429,6 +1429,70 @@ function renderRegister(){
 }
 
 
+
+function isTraditionalModel(){
+  return state.profile?.model === 'tradicional';
+}
+
+function eachDate(startIso, endIso){
+  const out = [];
+  const start = dateObj(startIso);
+  const end = dateObj(endIso);
+  if(Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return out;
+  for(const d = new Date(start); d <= end; d.setDate(d.getDate()+1)){
+    out.push(iso(d));
+  }
+  return out;
+}
+
+function annualBankStats(year){
+  const todayIso = iso(nowSP());
+  const start = `${year}-01-01`;
+  const endOfYear = `${year}-12-31`;
+  const end = endOfYear < todayIso ? endOfYear : todayIso;
+
+  let positive = 0;
+  let negative = 0;
+  let total = 0;
+  let consideredDays = 0;
+  let pendingDays = 0;
+
+  for(const id of eachDate(start, end)){
+    let exp = safeMinutes(expectedMinutes(id));
+    if(exp <= 0) continue;
+
+    const obj = state.days[id] || { date:id, punches:[] };
+    let saldo = 0;
+
+    if(obj.absenceType === 'atestado'){
+      saldo = 0;
+    } else if(obj.absenceType === 'banco' || obj.absenceType === 'falta'){
+      saldo = -exp;
+    } else if(isPending(obj)){
+      saldo = -exp;
+      pendingDays++;
+    } else {
+      saldo = safeMinutes(estimatedBankImpact(obj).saldo);
+    }
+
+    if(saldo > 0) positive += saldo;
+    if(saldo < 0) negative += Math.abs(saldo);
+    total += saldo;
+    consideredDays++;
+  }
+
+  return {
+    year,
+    start,
+    end,
+    positive:safeMinutes(positive),
+    negative:safeMinutes(negative),
+    total:safeMinutes(total),
+    consideredDays,
+    pendingDays
+  };
+}
+
 function renderMonth(){
   const n = nowSP();
   const currentValue = `${n.getFullYear()}-${pad(n.getMonth()+1)}`;
@@ -1437,6 +1501,7 @@ function renderMonth(){
   const year = Number(yearStr);
   const month = Number(monthStr) - 1;
   const st = monthStats(year, month);
+  const annualStats = annualBankStats(year);
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
   const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
   const rowsHtml = st.rows.map(r=>{
@@ -1452,7 +1517,9 @@ function renderMonth(){
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
   <section class="card"><div class="section-head"><div><h2>Mês</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
-  <section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>
+  ${isTraditionalModel()
+    ? `<section class="card"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
+    : `<section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
   <section class="card"><h2 class="section-title">Registro mensal</h2>${emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml}</section>
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
   <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;

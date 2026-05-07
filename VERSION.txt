@@ -1,2 +1,2 @@
-v1.3.10.4
-Build: Texto sem cabeçalho para planilha comum
+v1.3.10.5
+Build: Banco anual simples no modo Tradicional
