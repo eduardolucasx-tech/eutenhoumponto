@@ -114,7 +114,9 @@
       punches:absenceActive?[]:merged,
       deletedPunchIds:absenceActive?uniq([...deletedPunchIds,...merged.map(p=>p.id)]):deletedPunchIds,
       absenceType:absenceWinner.absenceType||null,
-      absenceBackup:absenceWinner.absenceBackup||l.absenceBackup||c.absenceBackup||null,
+      absenceBackup:revisionConflict
+        ? (absenceWinner.absenceBackup||null)
+        : (absenceWinner.absenceBackup||l.absenceBackup||c.absenceBackup||null),
       absenceRevision:Math.max(l.absenceRevision,c.absenceRevision),
       note:revisionConflict?(absenceWinner.note||''):(l.note||c.note||''),
       closed:absenceActive?true:revisionConflict?Boolean(absenceWinner.closed):Boolean(l.closed||c.closed)};
