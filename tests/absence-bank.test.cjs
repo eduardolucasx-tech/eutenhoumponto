@@ -189,3 +189,41 @@ test('feriado de sábado não tem projeção -4h',()=>{
   assert.equal(api.expectedMinutes('2026-10-04'),0);
   assert.equal(api.estimatedBankImpact({date:'2026-10-04',punches:[]}).saldo,0);
 });
+
+test('meses históricos vazios não geram dezenas de débitos presumidos',()=>{
+  const {api}=boot();
+  const august=api.monthStats(2026,7);
+  assert.equal(august.saldo,0);
+  assert.equal(august.sabadosPendentes,0);
+  const october=api.monthStats(2026,9);
+  assert.equal(october.saldo,-240);
+  assert.equal(october.cycleSaldo,-240);
+});
+test('mês histórico com registros da nuvem projeta seus sábados pendentes',()=>{
+  const {api}=boot();
+  api.state.days['2026-09-10']={
+    date:'2026-09-10',punches:[{time:'09:00'},{time:'18:00'}]
+  };
+  const september=api.monthStats(2026,8);
+  assert.ok(september.sabadosPendentes>0);
+  assert.equal(september.saldoProvisionadoSabados,-240*september.sabadosPendentes);
+  assert.equal(september.rows.find(r=>r.date==='2026-09-05').provisionalSaturday,true);
+});
+test('saldo oficial prevalece e sábado posterior projeta débito sem duplicação',()=>{
+  const {api}=boot();
+  api.state.officialBank={'2026-09':{
+    debito:0,credito:0,saldoAnterior:600,saldoAtual:600
+  }};
+  const october=api.monthStats(2026,9);
+  assert.equal(october.cycleBase,600);
+  assert.equal(october.cycleSaldo,-240);
+  assert.equal(october.cycleTotal,360);
+  assert.equal(october.sabadosPendentes,1);
+});
+test('sábado futuro e sábado ainda em andamento não antecipam débito',()=>{
+  const {api}=boot();
+  assert.equal(api.estimatedBankImpact({date:'2026-10-10',punches:[]}).saldo,0);
+  const row=api.monthStats(2026,9).rows.find(r=>r.date==='2026-10-10');
+  assert.equal(row.provisionalSaturday,false);
+  assert.equal(row.future,true);
+});
