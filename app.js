@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.8.2';
+const APP_VERSION = 'v1.8.3';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -65,6 +65,8 @@ var cloudHydrating = false;
 var cloudSyncTimer = null;
 var cloudLastError = '';
 var cloudLastSyncAt = null;
+var cloudHistoryStats = null;
+var cloudLoadedForUid = null;
 
 function hasRealFirebaseConfig(){
   const cfg = window.FIREBASE_CONFIG || {};
@@ -99,11 +101,14 @@ async function initFirebaseAuth(){
           provider: "firebase_google"
         };
         persistLocal();
-        await hydrateFromCloud('smart');
-        if(state.user?.uid===user.uid)await pushStateToCloud(true);
+        // Primeiro recuperar a matriz original da conta. Não sobrescrever a nuvem
+        // apenas pelo ato de entrar: dados antigos podem existir em outros meses.
+        await hydrateFromCloud('cloud');
         render();
       } else {
-        cloudReady = false;
+        cloudReady=false;
+        cloudLoadedForUid=null;
+        cloudHistoryStats=null;
       }
     });
 
@@ -137,28 +142,35 @@ function countDayEntries(days){
 
 function mergeDay(localDay,cloudDay){return PontoSync.mergeDay(localDay,cloudDay,localDay?.date||cloudDay?.date);}
 function mergeDays(localDays={},cloudDays={}){return PontoSync.mergeDays(localDays,cloudDays);}
-function mergeCloudWithLocal(cloud, mode='smart'){
-  const local = stateForCloud();
-  const cloudDays = cloud.days || {};
-  const localDays = local.days || {};
-
-  // Não dependemos do relógio do celular/PC para decidir o que é mais novo.
-  // O merge combina os dias e une batidas pelo horário.
-  const days = typeof mergeDays === 'function'
-    ? mergeDays(localDays, cloudDays)
-    : { ...cloudDays, ...localDays };
-
-  const profile = local.profile || cloud.profile || null;
-  const imports = Array.isArray(local.imports) && local.imports.length ? local.imports : (cloud.imports || []);
-  const officialBank = { ...(cloud.officialBank || {}), ...(local.officialBank || {}) };
-
-  return {
-    profile,
-    days,
-    imports,
-    officialBank,
-    clientModifiedAt: new Date().toISOString()
-  };
+function mergeCloudWithLocal(cloud,mode='cloud'){
+  const local=stateForCloud();
+  const cloudDays=cloud?.days&&typeof cloud.days==='object'?cloud.days:{};
+  const localDays=local.days||{};
+  // A chave de cada dia é YYYY-MM-DD: união preserva registros de TODOS os meses,
+  // e PontoSync evita ressuscitar batidas removidas.
+  const days=mergeDays(localDays,cloudDays);
+  const cloudProfile=cloud?.profile&&MODELS[cloud.profile.model]?cloud.profile:null;
+  // Login: configurações da nuvem prevalecem (incluindo escala 12x2/cidade).
+  // Salvamento explícito: configurações que o usuário acaba de editar prevalecem.
+  const profile=mode==='push'
+    ? (local.profile||cloudProfile)
+    : (cloudProfile||local.profile);
+  const imports=[];
+  const seen=new Set();
+  for(const entry of [...(Array.isArray(cloud.imports)?cloud.imports:[]),
+                     ...(Array.isArray(local.imports)?local.imports:[])]){
+    const key=JSON.stringify(entry);
+    if(!seen.has(key)){seen.add(key);imports.push(entry);}
+  }
+  const officialBank=mode==='push'
+    ? {...(cloud.officialBank||{}),...(local.officialBank||{})}
+    : {...(local.officialBank||{}),...(cloud.officialBank||{})};
+  return {profile,days,imports,officialBank,clientModifiedAt:new Date().toISOString()};
+}
+function cloudHistorySummary(cloud){
+  const dates=Object.keys(cloud?.days||{}).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k));
+  return {days:dates.length,months:new Set(dates.map(k=>k.slice(0,7))).size,
+    officialMonths:Object.keys(cloud?.officialBank||{}).length};
 }
 
 function renderFallback(message='Não consegui carregar esta tela.'){
@@ -1858,7 +1870,8 @@ function renderProfileScreen(){
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
   screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${previewMode
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>
+  ${!previewMode&&cloudHistoryStats?'<p class="muted">Histórico encontrado na nuvem: '+cloudHistoryStats.days+' dias distribuídos por '+cloudHistoryStats.months+' meses; '+cloudHistoryStats.officialMonths+' meses de banco oficial. Esses dados são conciliados com os registros locais.</p>':''}${previewMode
   ? '<p class="muted">Modo de demonstração. Não lê nem escreve no Firebase. Os dados são de teste.</p>'
   : `${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button>`}
   <button class="secondary full" id="disconnectGoogle">${previewMode?'Sair da demonstração':'Desconectar conta Google'}</button></section>
@@ -1995,18 +2008,35 @@ async function hydrateFromCloud(mode='smart'){
     const ref = await cloudDocRef();
     if(!ref) throw new Error('Referência Firestore não criada.');
 
-    const snap = await firestoreFns.getDoc(ref);
+    const uid=state.user.uid;
+    const snap=await firestoreFns.getDoc(ref);
     if(snap.exists()){
-      const merged = mergeCloudWithLocal(snap.data() || {}, mode);
-      state.profile = merged.profile || state.profile;
-      state.days = merged.days || {};
-      state.imports = merged.imports || [];
-      state.officialBank = merged.officialBank || {};
-      state.clientModifiedAt = merged.clientModifiedAt || state.clientModifiedAt;
+      const cloud=snap.data()||{};
+      // Cópia de segurança local do documento remoto ANTES da conciliação,
+      // com chave separada por UID. Falhas de quota não bloqueiam o login.
+      try{
+        const backupKey=STORAGE_KEY+':cloud-original:'+uid;
+        if(!localStorage.getItem(backupKey))
+          localStorage.setItem(backupKey,JSON.stringify({
+            savedAt:new Date().toISOString(),profile:cloud.profile||null,
+            days:cloud.days||{},imports:cloud.imports||[],
+            officialBank:cloud.officialBank||{}
+          }));
+      }catch(err){console.warn('Backup local da nuvem indisponível:',err);}
+      const merged=mergeCloudWithLocal(cloud,mode);
+      if(state.user?.uid!==uid)return false;
+      state.profile=merged.profile||state.profile;
+      state.days=merged.days||{};
+      state.imports=merged.imports||[];
+      state.officialBank=merged.officialBank||{};
+      state.clientModifiedAt=merged.clientModifiedAt||state.clientModifiedAt;
+      cloudHistoryStats=cloudHistorySummary(cloud);
       persistLocal();
+    }else{
+      cloudHistoryStats={days:0,months:0,officialMonths:0};
     }
-
-    cloudReady = true;
+    cloudLoadedForUid=uid;
+    cloudReady=true;
     cloudLastError = '';
     cloudLastSyncAt = new Date();
     return true;
@@ -2042,7 +2072,7 @@ async function pushStateToCloud(immediate=false){
       const uid=state.user.uid;
       const merged=await firestoreFns.runTransaction(firebaseDb,async tx=>{
         const snap=await tx.get(ref);
-        const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'smart'):stateForCloud();
+        const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'push'):stateForCloud();
         tx.set(ref,{...result,userMeta:{
           name:state.user?.name||'',email:state.user?.email||'',photoURL:state.user?.photoURL||''
         },updatedAt:firestoreFns.serverTimestamp()},{merge:true});
