@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.4.1';
+const APP_VERSION = 'v1.5.0';
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -622,14 +622,15 @@ function punchCards(dayObj){
   return `<div class="grid4 ${auto ? 'two' : ''}">${labels.map((l,i)=>`<div class="punch-card"><div class="ico bg-${colors[i]||'gray'} ${colors[i]||'gray'}">${icons[i]||'--'}</div><h3>${l}</h3><strong class="${colors[i]||'gray'}">${displayPunchTime(p,i)}</strong></div>`).join('')}</div>`;
 }
 
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));}
 function userFirstName(){
   const name = state.user?.name || state.user?.displayName || 'Usuário';
   return name.split(' ')[0] || 'Usuário';
 }
 function userPhotoHtml(size='small'){
-  const photo = state.user?.photoURL;
+  const photo = /^https:\/\//.test(state.user?.photoURL||'') ? escapeHtml(state.user.photoURL) : '';
   const initial = userFirstName().charAt(0).toUpperCase();
-  return photo ? `<img src="${photo}" alt="Foto do perfil">` : initial;
+  return photo ? `<img src="${photo}" alt="Foto do perfil">` : escapeHtml(initial);
 }
 function renderHeaderProfile(){
   const btn = document.getElementById('profileBtn');
@@ -760,7 +761,7 @@ function renderHome(){
   screenEl.innerHTML = `
   <section class="card home-profile slim">
     <div class="hello">
-      <small>Olá, ${userFirstName()}</small>
+      <small>Olá, ${escapeHtml(userFirstName())}</small>
       <strong>Vamos registrar seu ponto?</strong>
       <p class="tagline">${model().title}</p>
     </div>
@@ -1266,7 +1267,7 @@ function renderRegister(){
   const renderManual = () => {
     const d = state.days[date] || { punches:[], note:'' };
     const body = document.getElementById('registerBody');
-    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${d.note||''}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco</button><button class="secondary" id="medicalDayBtn">Atestado</button><button class="secondary danger-text" id="faultDayBtn">Falta</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
+    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${escapeHtml(d.note||'')}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco</button><button class="secondary" id="medicalDayBtn">Atestado</button><button class="secondary danger-text" id="faultDayBtn">Falta</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
     const draw = () => {
       const dd = state.days[regDate.value] || {punches:[]};
       regFields.innerHTML = manualFields.map((f,i)=>`<div class="time-field"><label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}" placeholder="HH:MM"></div>`).join('');
@@ -1667,10 +1668,10 @@ function renderProfileScreen(){
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
-  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${cloudLastError ? `<p class="muted">Último erro: ${cloudLastError}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Baixar da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
+  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
   <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
-  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Use o reset apenas se quiser limpar completamente os dados salvos neste navegador.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
+  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Exporte seus registros antes de importar ou apagar dados.</p><button class="secondary full" id="backupAll">Baixar backup JSON</button><p class="muted">O reset limpa apenas o navegador desta conta.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
 
   const cfgModelEl = document.getElementById('cfgModel');
   const cfgCityEl = document.getElementById('cfgCity');
@@ -1686,6 +1687,11 @@ function renderProfileScreen(){
   drawScale();
   cfgModelEl.onchange = drawScale;
 
+  document.getElementById('backupAll').onclick=()=>{
+    const data={app:'eu-tenho-um-ponto',version:APP_VERSION,exportedAt:new Date().toISOString(),userId:state.user?.uid||null,data:stateForCloud()};
+    downloadBlob('meu-ponto-backup-'+iso(nowSP())+'.json',JSON.stringify(data,null,2),'application/json;charset=utf-8');
+    showToast('Backup JSON exportado. Guarde em local seguro.','ok');
+  };
   document.getElementById('reset').onclick = () => {
     if(confirm('Limpar todos os dados locais?')){
       const uid=state.user?.uid;
@@ -1803,7 +1809,7 @@ async function hydrateFromCloud(mode='smart'){
       state.imports = merged.imports || [];
       state.officialBank = merged.officialBank || {};
       state.clientModifiedAt = merged.clientModifiedAt || state.clientModifiedAt;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      persistLocal();
     }
 
     cloudReady = true;
@@ -1838,15 +1844,16 @@ async function pushStateToCloud(immediate=false){
       const ref = await cloudDocRef();
       if(!ref) throw new Error('Referência Firestore não criada.');
 
-      await firestoreFns.setDoc(ref, {
-        ...stateForCloud(),
-        userMeta: {
-          name: state.user?.name || '',
-          email: state.user?.email || '',
-          photoURL: state.user?.photoURL || ''
-        },
-        updatedAt: firestoreFns.serverTimestamp()
-      }, { merge: true });
+      const uid=state.user.uid;
+      const merged=await firestoreFns.runTransaction(firebaseDb,async tx=>{
+        const snap=await tx.get(ref);
+        const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'smart'):stateForCloud();
+        tx.set(ref,{...result,userMeta:{
+          name:state.user?.name||'',email:state.user?.email||'',photoURL:state.user?.photoURL||''
+        },updatedAt:firestoreFns.serverTimestamp()},{merge:true});
+        return result;
+      });
+      if(state.user?.uid===uid){state.days=mergeDays(state.days,merged.days||{});persistLocal();}
 
       cloudReady = true;
       cloudLastError = '';
@@ -1869,7 +1876,7 @@ async function pushStateToCloud(immediate=false){
 async function pullStateFromCloud(){
   const ok = await hydrateFromCloud('cloud');
   if(ok){
-    showToast('Dados baixados da nuvem.', 'ok');
+    showToast('Dados conciliados com a nuvem.', 'ok');
     render();
   } else {
     showToast(`Não foi possível baixar: ${cloudLastError || 'erro desconhecido'}`, 'warn');
