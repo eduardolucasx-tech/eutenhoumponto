@@ -1809,12 +1809,13 @@ function diagnosticRowForDay(date){
     : (d.punches || []).some(p => p.source === 'typed') ? 'Manual'
     : (d.punches || []).some(p => p.source === 'button') ? 'Botão'
     : d.absenceType ? absenceLabel(d.absenceType)
+    : pendingSaturdayDebit(d)?'Matriz Hub: sábado estimado'
     : 'Sem fonte';
   return {
     date,
     expected: exp,
     worked,
-    saldo: isPending(d)?null:impact.saldo,
+    saldo: isPending(d)&&!pendingSaturdayDebit(d)?null:impact.saldo,
     status: status.text,
     cls: status.cls,
     punches: punchesOf(d).map(p => p.time).join(' / ') || '--',
@@ -1909,7 +1910,7 @@ function renderMonth(){
     return `<div class="day-item ${r.future?'future-day':'clickable-day'}" ${r.future?'':`data-day="${r.date}"`}>
       <div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>
       <div style="display:flex;gap:8px;align-items:center">
-        ${waiting?'<span class="alert" title="Pendente de conferência">!</span>':''}
+        ${(waiting||r.provisionalSaturday)?'<span class="alert" title="Pendente de conferência">!</span>':''}
         <span class="bal ${r.future||waiting?'':r.saldo<0?'neg':r.saldo>0?'pos':''}">
           ${r.future||waiting?'--:--':fmtMin(r.saldo)}${r.provisionalSaturday?' *':''}</span></div></div>
       <div class="day-sub">${r.future?'Dia futuro':short}</div></div>`;
