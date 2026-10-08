@@ -1,5 +1,8 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.4.1';
+const APP_VERSION = 'v1.8.2';
+const PREVIEW_UID = '__local_preview_v161__';
+let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
+function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -69,6 +72,7 @@ function hasRealFirebaseConfig(){
 }
 
 async function initFirebaseAuth(){
+  if(previewMode) return false;
   if(firebaseReady || !hasRealFirebaseConfig()) return firebaseReady;
   try{
     const appMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
@@ -84,7 +88,9 @@ async function initFirebaseAuth(){
     firebaseReady = true;
 
     authMod.onAuthStateChanged(firebaseAuth, async (user) => {
+      if(previewMode) return;
       if(user){
+        if(state.user?.uid!==user.uid)state=load(user.uid);
         state.user = {
           uid: user.uid,
           name: user.displayName || "Usuário Google",
@@ -92,8 +98,9 @@ async function initFirebaseAuth(){
           photoURL: user.photoURL || "",
           provider: "firebase_google"
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        persistLocal();
         await hydrateFromCloud('smart');
+        if(state.user?.uid===user.uid)await pushStateToCloud(true);
         render();
       } else {
         cloudReady = false;
@@ -128,19 +135,8 @@ function countDayEntries(days){
 }
 
 
-function mergeDay(localDay, cloudDay){
-  if(!localDay) return cloudDay;
-  if(!cloudDay) return localDay;
-  const punchMap = new Map();
-  [...(cloudDay.punches || []), ...(localDay.punches || [])].forEach(p => { if(p?.time) punchMap.set(p.time, {...p}); });
-  return { ...cloudDay, ...localDay, punches:[...punchMap.values()].sort((a,b)=>parseHM(a.time)-parseHM(b.time)), absenceType: localDay.absenceType || cloudDay.absenceType || null, note: localDay.note || cloudDay.note || '' };
-}
-function mergeDays(localDays={}, cloudDays={}){
-  const keys = new Set([...Object.keys(localDays||{}), ...Object.keys(cloudDays||{})]);
-  const out = {};
-  keys.forEach(k => out[k] = mergeDay(localDays[k], cloudDays[k]));
-  return out;
-}
+function mergeDay(localDay,cloudDay){return PontoSync.mergeDay(localDay,cloudDay,localDay?.date||cloudDay?.date);}
+function mergeDays(localDays={},cloudDays={}){return PontoSync.mergeDays(localDays,cloudDays);}
 function mergeCloudWithLocal(cloud, mode='smart'){
   const local = stateForCloud();
   const cloudDays = cloud.days || {};
@@ -169,11 +165,12 @@ function renderFallback(message='Não consegui carregar esta tela.'){
   screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${message}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
   const btn = document.getElementById('fallbackReset');
   if(btn){
-    btn.onclick = () => {
-      localStorage.removeItem(STORAGE_KEY);
-      state = load();
-      tab = 'home';
-      render();
+    btn.onclick=()=>{
+      if(!confirm('Limpar os dados locais desta conta? O Firestore não será apagado.'))return;
+      if(state.user?.uid)localStorage.removeItem(storageKey(state.user.uid));
+      const signedUser=state.user;
+      state=freshState();state.user=signedUser;
+      tab='home';render();
     };
   }
 }
@@ -204,12 +201,14 @@ function showToast(message, type='info'){
   toast.addEventListener('click', remove);
 }
 function syncStatusLabel(){
+  if(previewMode)return 'Prévia local · sem nuvem';
   if(!state.user) return 'Sem conta conectada';
   if(cloudReady && cloudLastSyncAt) return `Sincronizado às ${hm(cloudLastSyncAt)}`;
   if(cloudLastError) return 'Local: erro na nuvem';
   return cloudReady ? 'Sincronizado com a nuvem' : 'Salvando localmente';
 }
 function syncStatusClass(){
+  if(previewMode)return 'neutral';
   return cloudReady ? 'ok' : 'warn';
 }
 
@@ -221,42 +220,82 @@ let importSubView = 'sheet';
 let monthDrawers = { records:true, diagnostic:false };
 let selectedRegisterDate = null;
 const screenEl = document.getElementById('screen');
-function load(){
-  const fresh = { user:null, profile:null, days:{}, imports:[], officialBank:{}, clientModifiedAt:null };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return fresh;
-    const parsed = JSON.parse(raw);
-    if(!parsed || typeof parsed !== 'object') return fresh;
-    if(parsed.profile && !MODELS[parsed.profile.model]) parsed.profile = null;
-    parsed.days = parsed.days || {};
-    parsed.imports = parsed.imports || [];
-    parsed.officialBank = parsed.officialBank || {};
-    return { ...fresh, ...parsed };
-  } catch (e) {
-    console.warn('Falha ao carregar dados locais. Reiniciando prévia.', e);
-    localStorage.removeItem(STORAGE_KEY);
-    return fresh;
+function freshState(){return {user:null,profile:null,days:{},imports:[],officialBank:{},clientModifiedAt:null};}
+function storageKey(uid){return STORAGE_KEY+':'+uid;}
+function load(uid=null){
+  const fresh=freshState();
+  if(!uid)return fresh;
+  try{
+    let raw=localStorage.getItem(storageKey(uid));
+    if(!raw){
+      const legacy=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+      if(legacy?.user?.uid===uid)raw=JSON.stringify(legacy);
+    }
+    if(!raw)return fresh;
+    const parsed=JSON.parse(raw);
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return fresh;
+    if(parsed.profile&&!MODELS[parsed.profile.model])parsed.profile=null;
+    parsed.days=parsed.days||{};
+    parsed.imports=Array.isArray(parsed.imports)?parsed.imports:[];
+    parsed.officialBank=parsed.officialBank||{};
+    return {...fresh,...parsed,user:null};
+  }catch(err){console.warn('Falha ao ler dados locais:',err);return fresh;}
+}
+function persistLocal(){
+  if(state.user?.uid){
+    try{localStorage.setItem(storageKey(state.user.uid),JSON.stringify(state));}
+    catch(e){if(!previewMode)console.warn('Armazenamento indisponível:',e);}
   }
 }
-function save(){ state.clientModifiedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(true).then(ok => { if(ok) renderHeaderProfile(); }); render(); }
+function startPreview(){
+  previewMode=true;
+  cloudReady=false;
+  cloudLastError='';
+  state=load(PREVIEW_UID);
+  state.user=previewUser();
+  if(!state.profile){
+    state.profile={model:'tribuna_hub_prog',city:'Santos',bankStart:0,scaleStartDate:null,demoData:true,createdAt:new Date().toISOString()};
+    const today=nowSP();
+    for(let offset=1;offset<=5;offset++){
+      const date=new Date(today);date.setDate(today.getDate()-offset);
+      const id=iso(date);
+      if(expectedMinutes(id)>0){
+        state.days[id]={date:id,punches:[
+          {time:'09:04',source:'preview_example'},
+          {time:offset%2===0?'18:22':'18:12',source:'preview_example'}
+        ],note:'Exemplo da demonstração',closed:true};
+      }
+    }
+    const minutes=today.getHours()*60+today.getMinutes();
+    if(expectedMinutes(iso(today))>0 && minutes>150){
+      const start=minutes-115;
+      state.days[iso(today)]={date:iso(today),punches:[{time:`${pad(Math.floor(start/60))}:${pad(start%60)}`,source:'preview_example'}],note:'Exemplo da demonstração'};
+    }
+  }
+  tab='home';
+  persistLocal();
+  render();
+}
+function save(){
+  state.clientModifiedAt=new Date().toISOString();
+  persistLocal();
+  if(!previewMode)pushStateToCloud(true).then(ok=>{if(ok)renderHeaderProfile();});
+  render();
+}
 function model(){ return state.profile ? MODELS[state.profile.model] : null; }
 function day(date=iso(nowSP())){ if(!state.days[date]) state.days[date] = { date, punches:[], note:'' }; return state.days[date]; }
 function punchesOf(dayObj){ return [...(dayObj.punches||[])]; }
 function isOpenShift(dayObj){
-  if(!state.profile || !dayObj) return false;
-  const p = punchesOf(dayObj);
-  return expectedMinutes(dayObj.date) > 0 && p.length > 0 && p.length < requiredPunches();
+  if(!state.profile||!dayObj||dayObj.absenceType||dayObj.closed)return false;
+  const p=punchesOf(dayObj);
+  return p.length>0&&p.length<requiredPunches();
 }
 function openShiftDate(){
-  const now = nowSP();
-  for(let offset=1; offset<=7; offset++){
-    const d = new Date(now); d.setDate(now.getDate()-offset);
-    const id = iso(d);
-    if(isOpenShift(state.days[id])) return id;
-  }
-  const today = iso(now);
-  if(isOpenShift(state.days[today])) return today;
+  const now=nowSP(),today=iso(now);
+  if(isOpenShift(state.days[today]))return today;
+  const prev=new Date(now);prev.setDate(prev.getDate()-1);
+  const yesterday=iso(prev),old=state.days[yesterday];
+  if(isOpenShift(old)&&minutesSinceFirstPunch(yesterday,old)<=20*60)return yesterday;
   return null;
 }
 function activeWorkDate(){ return openShiftDate() || iso(nowSP()); }
@@ -285,7 +324,9 @@ function undoLastPunch(date=activeWorkDate()){
     showToast('Não há batidas para remover.', 'warn');
     return;
   }
-  const removed = d.punches.pop();
+  const result=PontoSync.removeLastPunch(d);
+  state.days[date]=result.day;
+  const removed=result.removed;
   save();
   showToast(`Última batida removida: ${removed?.time || '--:--'}.`, 'warn');
 }
@@ -311,9 +352,10 @@ function grossMinutesForExpected(net){
   if(!net || net <= 0) return 0;
   // Regra Tribuna: até 6h brutas desconta 15min; acima de 6h brutas desconta 1h.
   // Para prever o fim da jornada, 8h líquidas viram 9h de permanência; 4h líquidas viram 4h15.
-  return net >= 360 ? net + 60 : net + 15;
+  return net > 345 ? net + 60 : net + 15;
 }
 function homeStatusLine(dayObj){
+  if(dayObj?.absenceType)return `${absenceLabel(dayObj.absenceType)} ${dayObj.absenceType==='atestado'?'registrado':'registrada'}`;
   const p = punchesOf(dayObj);
   const exp = expectedMinutes(dayObj.date);
   if(model()?.punchMode === 'autoLunch'){
@@ -350,7 +392,9 @@ function workedMinutes(dayObj, partial=false){
   };
   if(model().punchMode === 'autoLunch'){
     if(p.length < 2){
-      return partial ? safeDiff(currentMin, parseHM(p[0].time)) : 0;
+      if(!partial)return 0;
+      const bruto=safeDiff(currentMin,parseHM(p[0].time));
+      return bruto<=15?bruto:Math.max(0,bruto-(bruto>360?60:15));
     }
     const bruto = safeDiff(parseHM(p[p.length-1].time), parseHM(p[0].time));
     if(bruto <= 15) return bruto;
@@ -374,19 +418,21 @@ function workedMinutes(dayObj, partial=false){
 }
 function expectedMinutes(date){ return model() ? model().expected(date, state.profile) : 0; }
 function requiredPunches(){ return model()?.punchMode === 'autoLunch' ? 2 : 4; }
-function complete(dayObj){ return !!dayObj?.absenceType || !!dayObj?.closed || (dayObj.punches||[]).length >= requiredPunches() || expectedMinutes(dayObj.date) === 0; }
+function complete(dayObj){
+  // Sem batidas completas, ausência explícita ou dado oficial, não há apuração.
+  return !!dayObj?.absenceType||!!dayOfficialImpact(dayObj)
+    ||(dayObj?.punches||[]).length>=requiredPunches();
+}
 function isPending(dayObj){
-  if(dayObj?.absenceType) return false;
-  if(dayObj?.closed) return false;
-  const exp = expectedMinutes(dayObj.date);
-  if(exp <= 0) return false;
-  return (dayObj.punches||[]).length < requiredPunches();
+  if(dayObj?.absenceType||dayOfficialImpact(dayObj))return false;
+  if(expectedMinutes(dayObj.date)<=0)return false;
+  return (dayObj.punches||[]).length<requiredPunches();
 }
 function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
-  if(isPending(dayObj)) return { text:'Marcação pendente', cls:'warn' };
+  if(isPending(dayObj))return {text:(dayObj.punches||[]).length?'Batidas incompletas':'Sem registro',cls:'warn'};
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj, partial);
   const saldo = w - exp;
@@ -402,22 +448,23 @@ function tribunaLikeModel(){
 function absenceLabel(type){
   return ({ banco:'Folga banco', atestado:'Atestado', falta:'Falta' })[type] || '';
 }
-function setDayAbsence(date, type){
-  const d = day(date);
-  d.absenceType = type;
-  d.punches = [];
-  d.closed = true;
-  d.note = absenceLabel(type);
+function setDayAbsence(date,type){
+  const d=day(date);
+  try{state.days[date]=PontoSync.setAbsence(d,type);}
+  catch(err){showToast(err.message||'Falha ao registrar ausência.','warn');return;}
   save();
-  showToast(`${absenceLabel(type)} aplicada em ${brDate(date)}.`, type === 'atestado' ? 'ok' : 'warn');
+  const exp=expectedMinutes(date);
+  const message=exp===0&&type!=='atestado'
+    ? `${absenceLabel(type)} registrada em ${brDate(date)}. Carga prevista 00:00; sem débito.`
+    : `${absenceLabel(type)} registrada em ${brDate(date)}.`;
+  showToast(message,type==='atestado'?'ok':'warn');
 }
 function clearDayAbsence(date){
-  const d = day(date);
-  d.absenceType = null;
-  if(d.note && ['Folga banco','Atestado','Falta'].includes(d.note)) d.note = '';
-  d.closed = false;
+  const d=day(date);
+  const restored=Boolean(d?.absenceBackup?.punches?.length);
+  state.days[date]=PontoSync.clearAbsence(d);
   save();
-  showToast(`Ausência removida de ${brDate(date)}.`, 'ok');
+  showToast(`Ausência removida de ${brDate(date)}.${restored?' Batidas anteriores restauradas.':''}`,'ok');
 }
 function dayAbsenceImpact(dayObj){
   const type = dayObj?.absenceType;
@@ -444,7 +491,8 @@ function estimatedBankImpact(dayObj){
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
-  if(isPending(dayObj)) return { debit: exp, credit:0, saldo:-exp, source:'pending_debit' };
+  // Falta de informação não é falta ao trabalho. Aguarda conferência.
+  if(isPending(dayObj))return {debit:0,credit:0,saldo:0,source:'pending_unconfirmed'};
   const saldo = w - exp;
   return { debit: Math.max(0, -saldo), credit: Math.max(0, saldo), saldo, source:'estimated' };
 }
@@ -501,9 +549,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
   for(let d=new Date(after); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    const exp = expectedMinutes(id);
-    const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
+    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -517,33 +563,44 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    const exp = expectedMinutes(id);
-    const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
+    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
 function monthStats(year, month){
   const now = nowSP();
   const first = new Date(year, month, 1); const last = new Date(year, month+1, 0);
-  let prev=0, trab=0, saldoConfirmado=0, pend=0, cravada=0, superior=0, incompleta=0;
+  let prev=0,trab=0,saldoConfirmado=0,pend=0,semRegistro=0,parcial=0,cravada=0,superior=0,incompleta=0;
   let debitEstimated=0, creditEstimated=0;
   const rows=[], issues=[];
   for(let d=new Date(first); d<=last; d.setDate(d.getDate()+1)){
-    const id=iso(d); const obj=state.days[id] || {date:id,punches:[]}; const exp=expectedMinutes(id); const w=workedMinutes(obj); const isPastOrToday = d <= now; const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(isPastOrToday){ prev += exp; trab += w; if(isPending(obj)) pend++; }
-    const impact = estimatedBankImpact(obj);
-    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += impact.saldo; debitEstimated += impact.debit; creditEstimated += impact.credit; }
+    const id=iso(d),obj=state.days[id]||{date:id,punches:[]};
+    const exp=expectedMinutes(id),w=workedMinutes(obj),isPastOrToday=d<=now;
+    const done=complete(obj),pending=isPending(obj),count=(obj.punches||[]).length;
+    if(isPastOrToday){
+      prev+=exp;trab+=w;
+      if(pending){pend++;if(count===0)semRegistro++;else parcial++;}
+    }
+    const impact=estimatedBankImpact(obj);
+    if(done&&isPastOrToday){
+      saldoConfirmado+=impact.saldo;
+      debitEstimated+=impact.debit;
+      creditEstimated+=impact.credit;
+    }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);
     const dup = punches.some((p,i)=>i>0 && p.time===punches[i-1].time);
-    if(isPastOrToday && exp>0 && isPending(obj)) issues.push(`${brDate(id)}: marcação pendente`);
+    if(isPastOrToday&&pending)issues.push(`${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
+    if(obj.absenceType&&dayOfficialImpact(obj))issues.push(`${brDate(id)}: ausência manual com valores oficiais diários; confira a divergência`);
     if(dup) issues.push(`${brDate(id)}: marcação duplicada`);
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
     const displayImpact = isPastOrToday ? impact : { debit:0, credit:0, saldo:0, source:'future' };
     const displayStatus = isPastOrToday ? status : { text:'Futuro', cls:'gray' };
-    rows.push({date:id, weekday:weekShort[d.getDay()].toUpperCase(), punches, expected:exp, worked:w, saldo:displayImpact.saldo, bankImpact:displayImpact, status:displayStatus, holiday:isHoliday(id,state.profile.city), pastOrToday:isPastOrToday, future:!isPastOrToday, done});
+    rows.push({date:id,weekday:weekShort[d.getDay()].toUpperCase(),punches,
+      expected:exp,worked:w,saldo:displayImpact.saldo,bankImpact:displayImpact,status:displayStatus,
+      holiday:isHoliday(id,state.profile.city),absenceType:obj.absenceType||null,
+      pending:isPastOrToday&&pending,pastOrToday:isPastOrToday,future:!isPastOrToday,done});
   }
   const cycle = bankCycleFor(`${year}-${pad(month+1)}-01`);
   const officialBank = findLatestOfficialBank(cycle, year, month);
@@ -555,11 +612,15 @@ function monthStats(year, month){
   const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado;
   const monthDebit = officialMonth ? officialMonth.debit : debitEstimated;
   const monthCredit = officialMonth ? officialMonth.credit : creditEstimated;
-  return {prev, trab, saldo:monthSaldo, saldoEstimado:saldoConfirmado, debitEstimated, creditEstimated, monthDebit, monthCredit, officialMonth, saldoConfirmado, cycleSaldo, cycleTotal, cycleBase, officialBank, pend, cravada, superior, incompleta, rows, issues, cycle};
+  return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado,debitEstimated,creditEstimated,
+    monthDebit,monthCredit,officialMonth,saldoConfirmado,cycleSaldo,cycleTotal,cycleBase,officialBank,
+    pend,semRegistro,parcial,cravada,superior,incompleta,rows,issues,cycle};
 }
 function escapeCsv(v){
-  const str = String(v ?? '');
-  return /[";\n]/.test(str) ? '"' + str.replace(/"/g,'""') + '"' : str;
+  // Impede interpretação de notas ou outros campos como fórmulas em planilhas.
+  const original=String(v??'');
+  const str=/^\s*[=+@-]/.test(original)?"'"+original:original;
+  return /[";\n]/.test(str)?'"'+str.replace(/"/g,'""')+'"':str;
 }
 function downloadBlob(filename, content, type){
   const blob = new Blob([content], {type});
@@ -576,7 +637,7 @@ function exportMonthCsv(year, month){
     const p = r.punches || [];
     const origem = [...new Set(p.map(x=>x.source||'manual'))].join(', ');
     const note = state.days[r.date]?.note || '';
-    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), fmtMin(r.saldo), r.status.text, origem, note];
+    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), r.pending||r.future?'':fmtMin(r.saldo), r.status.text, origem, note];
     lines.push(vals.map(escapeCsv).join(';'));
   });
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
@@ -585,7 +646,7 @@ function exportMonthExcel(year, month){
   const st = monthStats(year,month);
   const rows = st.rows.map(r=>{
     const p = r.punches || [];
-    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${state.days[r.date]?.note||''}</td></tr>`;
+    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending||r.future?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${escapeHtml(state.days[r.date]?.note||'')}</td></tr>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Eu tenho um ponto. - ${monthNames[month]} ${year}</h1><table border="1"><tr><th>Previsto até hoje</th><th>Trabalhado</th><th>Saldo mês</th><th>Banco do ciclo</th><th>Marcações pendentes</th></tr><tr><td>${fmtMin(st.prev)}</td><td>${fmtMin(st.trab)}</td><td>${fmtMin(st.saldo)}</td><td>${fmtMin(st.cycleTotal)}</td><td>${st.pend}</td></tr></table><br><table border="1"><tr><th>Data</th><th>Dia</th><th>Modelo</th><th>Entrada</th><th>Saída almoço</th><th>Volta almoço</th><th>Saída</th><th>Trabalhado</th><th>Previsto</th><th>Saldo</th><th>Status</th><th>Observação</th></tr>${rows}</table></body></html>`;
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.xls`, html, 'application/vnd.ms-excel;charset=utf-8');
@@ -594,17 +655,25 @@ function reportText(year, month){
   const st = monthStats(year,month);
   return `Relatório - Eu tenho um ponto.\n${monthNames[month]} de ${year}\nModelo: ${model().title}\nCiclo: ${st.cycle.label}\n\nPrevisto até hoje: ${fmtMin(st.prev)}\nTrabalhado: ${fmtMin(st.trab)}\nSaldo do mês ${st.officialMonth ? '(oficial)' : '(estimado)'}: ${fmtMin(st.saldo)}\nDébito do mês: ${fmtMin(st.monthDebit)}
 Crédito do mês: ${fmtMin(st.monthCredit)}
-Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nMarcações pendentes: ${st.pend}\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
+Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nPendências: ${st.pend} (sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial})\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
 }
-function addPunch(date, time, source='manual'){
-  const d = day(date);
+function addPunch(date,time,source='manual'){
+  const d=day(date);
+  if(d.absenceType){
+    showToast('Este dia está como '+absenceLabel(d.absenceType)+'. Remova a ausência antes de registrar ponto.','warn');
+    return;
+  }
   if(d.punches.find(p=>p.time===time)){
     showToast('Essa marcação já existe neste dia.', 'warn');
     return;
   }
-  d.punches.push({time, source, createdAt:new Date().toISOString()});
+  if(d.punches.length>=requiredPunches()){
+    showToast('Jornada completa. Corrija as batidas na aba Registrar.','warn');return;
+  }
+  try{state.days[date]=PontoSync.addPunch(d,time,source);}
+  catch(err){showToast(err.message,'warn');return;}
   save();
-  const idx = d.punches.length - 1;
+  const idx=state.days[date].punches.length-1;
   showToast(`${labelForIndex(Math.min(idx, requiredPunches()-1))} registrada às ${time}.`, 'ok');
 }
 function labelForIndex(i){ return model()?.punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'][i] : ['Entrada','Saída almoço','Volta almoço','Saída'][i]; }
@@ -617,14 +686,15 @@ function punchCards(dayObj){
   return `<div class="grid4 ${auto ? 'two' : ''}">${labels.map((l,i)=>`<div class="punch-card"><div class="ico bg-${colors[i]||'gray'} ${colors[i]||'gray'}">${icons[i]||'--'}</div><h3>${l}</h3><strong class="${colors[i]||'gray'}">${displayPunchTime(p,i)}</strong></div>`).join('')}</div>`;
 }
 
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));}
 function userFirstName(){
   const name = state.user?.name || state.user?.displayName || 'Usuário';
   return name.split(' ')[0] || 'Usuário';
 }
 function userPhotoHtml(size='small'){
-  const photo = state.user?.photoURL;
+  const photo = /^https:\/\//.test(state.user?.photoURL||'') ? escapeHtml(state.user.photoURL) : '';
   const initial = userFirstName().charAt(0).toUpperCase();
-  return photo ? `<img src="${photo}" alt="Foto do perfil">` : initial;
+  return photo ? `<img src="${photo}" alt="Foto do perfil">` : escapeHtml(initial);
 }
 function renderHeaderProfile(){
   const btn = document.getElementById('profileBtn');
@@ -652,6 +722,7 @@ function goProfile(){
 function render(){
   try{
     const currentTab = tab || 'home';
+    if(screenEl?.dataset)screenEl.dataset.view=currentTab;
     document.querySelectorAll('.bottom-nav button').forEach((button) => {
       const btnTab = button.dataset.tab;
       button.classList.toggle('active', btnTab === currentTab || ((btnTab === 'config' || btnTab === 'profile') && (currentTab === 'config' || currentTab === 'profile')));
@@ -684,12 +755,27 @@ async function loginWithGoogle(){
     await firebaseFns.signInWithPopup(firebaseAuth, firebaseProvider);
   }catch(err){
     console.warn('Falha no login Google:', err);
-    if(typeof showToast === 'function') showToast(`Erro no login Google: ${err?.message || err}`, 'warn');
-    else alert(`Erro no login Google: ${err?.message || err}`);
+    const code=err?.code||'';
+    const message=code==='auth/unauthorized-domain'
+      ? 'Este endereço de preview não está autorizado no Firebase. Use Prévia local ou publique em domínio autorizado.'
+      : code==='auth/popup-blocked'
+      ? 'O navegador bloqueou o pop-up. Permita pop-ups no site ou use Prévia local.'
+      : code==='auth/operation-not-allowed'
+      ? 'Login Google não foi habilitado no Firebase Authentication.'
+      : 'Não foi possível autenticar: '+(err?.message||err);
+    if(typeof showToast==='function')showToast(message,'warn');
+    else alert(message);
   }
 }
 
 async function logoutGoogle(){
+  if(previewMode){
+    previewMode=false;
+    state=freshState();
+    tab='home';
+    render();
+    return;
+  }
   try{
     if(firebaseReady && firebaseAuth && firebaseFns){
       await firebaseFns.signOut(firebaseAuth);
@@ -697,16 +783,16 @@ async function logoutGoogle(){
   }catch(err){
     console.warn('Falha ao desconectar Google:', err);
   }
-  state.user = null;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  state=freshState();
   tab = 'home';
   render();
 }
 
 function renderLogin(){
-  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para sincronizar seu perfil, marcações e banco de horas.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted" style="margin-top:12px">Versão ${APP_VERSION}</p></section></div>`;
+  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Escolha como acessar o aplicativo.</p><button class="google" id="googleLogin">Entrar com Google</button><button class="secondary full" id="demoLogin">Experimentar sem login</button><p class="muted" style="margin-top:12px">A demonstração usa armazenamento local separado. Nenhum registro será enviado ao Firebase.</p><p class="muted">Versão ${APP_VERSION}</p></section></div>`;
   const btn = document.getElementById('googleLogin');
-  if(btn) btn.onclick = () => loginWithGoogle();
+  if(btn)btn.onclick=()=>loginWithGoogle();
+  document.getElementById('demoLogin').onclick=startPreview;
 }
 
 function renderModelChoice(){
@@ -739,49 +825,141 @@ function renderScaleSetup(){
   screenEl.innerHTML = `<section class="card"><h2>TRIBUNA JORNALISMO</h2><p class="muted">Informe a data inicial da escala 12x2. Ela deve ser o primeiro dia trabalhado do ciclo.</p><label>Data inicial da escala</label><input id="scaleStart" class="input" type="date" value="${iso(nowSP())}"><button class="primary" style="width:100%;margin-top:14px" id="saveScale">Salvar modelo</button></section>`;
   saveScale.onclick = () => { state.profile.scaleStartDate = scaleStart.value; save(); };
 }
-function renderHome(){
-  const n = nowSP(), date = activeWorkDate(), d = day(date), worked = workedMinutes(d, true), exp = expectedMinutes(date), saldo = worked-exp, st = jornadaStatus(d, true);
-  const baseDate = dateObj(date);
-  const isOpen = isOpenShift(d);
-  const openMins = isOpen ? minutesSinceFirstPunch(date, d) : 0;
-  const overdue = isOpen && openMins >= 18*60;
-  const yesterday = new Date(baseDate); yesterday.setDate(baseDate.getDate()-1); const yIso = iso(yesterday); const yd = state.days[yIso] || {date:yIso,punches:[]};
-  const activeLabel = date !== iso(n) ? 'Jornada em andamento' : 'Hoje';
-  const protection = overdue ? `<section class="card warning-card"><h2 class="section-title">Jornada aberta</h2><p>Existe uma jornada aberta há ${fmtMin(openMins)}. Confira antes de continuar.</p><div class="actions"><button class="secondary" id="finishOpenBtn">Concluir agora</button><button class="secondary danger-text" id="undoOpenBtn">Limpar última batida</button></div></section>` : '';
-  const undoButton = (d.punches||[]).length ? `<button class="secondary full" id="undoLastBtn">Limpar última batida</button>` : '';
-  const ySaldo = workedMinutes(yd)-expectedMinutes(yIso);
-  const ySummary = yd.punches?.length
-    ? `<div class="history-mini"><span>${displayPunchTime(yd.punches,0)} → ${displayPunchTime(yd.punches, yd.punches.length-1)}</span><strong class="${ySaldo<0?'danger':'ok'}">${fmtMin(ySaldo)}</strong></div>`
-    : `<div class="empty-state compact">Nenhuma marcação registrada no dia anterior.</div>`;
-  screenEl.innerHTML = `
-  <section class="card home-profile slim">
-    <div class="hello">
-      <small>Olá, ${userFirstName()}</small>
-      <strong>Vamos registrar seu ponto?</strong>
-      <p class="tagline">${model().title}</p>
-    </div>
-    <div class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</div>
-  </section>
-  ${protection}
-  <section class="card soft center hero-card">
-    <div class="date-line">${activeLabel} · ${pad(baseDate.getDate())} de ${monthNames[baseDate.getMonth()]} de ${baseDate.getFullYear()} · ${weekFull[baseDate.getDay()]}</div>
-    <div class="clock" id="clockNow">${hm(n)}</div>
-    <button class="cta" id="beatBtn">BATER PONTO</button>
-    <div class="status-line ${st.cls==='danger'?'danger-tone':st.cls==='ok'?'ok-tone':''}" id="homeStatus">${homeStatusLine(d)}</div>
-    ${undoButton}
-  </section>
-  <section class="card"><h2 class="section-title">Batidas de hoje</h2>${punchCards(d)}</section>
-  <section class="card soft"><h2 class="section-title">Resumo do dia</h2><div class="kpi-strip two"><div class="kpi-mini"><span>Esperado</span><strong>${fmtMin(exp)}</strong></div><div class="kpi-mini"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong></div><div class="kpi-mini"><span>Saldo parcial</span><strong class="${saldo<0?'danger':'ok'}">${fmtMin(saldo)}</strong></div><div class="kpi-mini"><span>Status</span><strong class="${st.cls}">${st.text}</strong></div></div></section>
-  <section class="card"><h2 class="section-title">Histórico do dia anterior</h2><div class="row"><span>${brDate(yIso)} · ${weekShort[yesterday.getDay()].toUpperCase()}</span><b>${yd.punches?.length ? 'Registrado' : 'Sem registro'}</b></div>${ySummary}</section>`;
-  beatBtn.onclick = () => { addPunch(activeWorkDate(), hm(nowSP()), 'button'); };
-  const undoBtn = document.getElementById('undoLastBtn');
-  if(undoBtn) undoBtn.onclick = () => undoLastPunch(date);
-  const finishBtn = document.getElementById('finishOpenBtn');
-  if(finishBtn) finishBtn.onclick = () => addPunch(date, hm(nowSP()), 'button');
-  const undoOpenBtn = document.getElementById('undoOpenBtn');
-  if(undoOpenBtn) undoOpenBtn.onclick = () => undoLastPunch(date);
+// Até 100%, o círculo dourado representa a meta; acima dela,
+// um anel verde externo acompanha o excedente, sem limitar o número exibido.
+function computeTimeProgress(worked,expected){
+  const done=Math.max(0,Number(worked)||0);
+  const target=Math.max(0,Number(expected)||0);
+  const extraMinutes=Math.max(0,done-target);
+  if(target===0)return {
+    percent:null,goalArc:0,extraArc:done>0?100:0,
+    overtime:done>0,extraMinutes:done,label:'SEM META'
+  };
+  const percent=Math.round((done/target)*100);
+  return {
+    percent,goalArc:Math.min(100,percent),
+    // O arco verde completa uma volta quando o excedente equivale à jornada prevista.
+    extraArc:Math.min(100,Math.round((extraMinutes/target)*100)),
+    overtime:extraMinutes>0,extraMinutes,
+    label:extraMinutes>0?'HORA EXTRA':'DO DIA'
+  };
 }
-
+function renderHome(){
+  if(screenEl?.dataset)screenEl.dataset.view='home';
+  const n=nowSP();
+  const date=activeWorkDate();
+  const d=day(date);
+  const worked=workedMinutes(d,true);
+  const expected=expectedMinutes(date);
+  const saldo=estimatedBankImpact(d).saldo;
+  const saldoApurado=complete(d);
+  const jornada=jornadaStatus(d,true);
+  const stamp=dateObj(date);
+  const punches=punchesOf(d);
+  const total=requiredPunches();
+  const progress=computeTimeProgress(worked,expected);
+  const fullyMarked=punches.length>=total || Boolean(d.absenceType);
+  const open=isOpenShift(d);
+  const openMins=open?minutesSinceFirstPunch(date,d):0;
+  const overdue=open && openMins>=18*60;
+  const labels=model()?.punchMode==='autoLunch'
+    ? ['Entrada','Saída']
+    : ['Entrada','Intervalo','Retorno','Saída'];
+  const nextLabel=fullyMarked?'Jornada registrada':punches.length===0?'Registrar entrada':`Registrar ${labels[Math.min(punches.length,labels.length-1)].toLowerCase()}`;
+  const timeline=labels.map((label,i)=>{
+    const registered=!!punches[i];
+    const inProgress=!registered && i===punches.length;
+    const phase=i===0?'tf-entry':i===labels.length-1?'tf-exit':i===1?'tf-break':'tf-return';
+    const status=registered?'Registrado':inProgress?'Próximo passo':'Aguardando';
+    return `<li class="tf-timeline-step ${phase} ${registered?'done':inProgress?'current':''}">
+      <span class="tf-timeline-dot">${registered?'✓':pad(i+1)}</span>
+      <div class="tf-timeline-info">
+        <div><div class="tf-timeline-name">${label}</div><span class="tf-timeline-sub">${status}</span></div>
+        <time class="tf-timeline-time">${registered?displayPunchTime(punches,i):'--:--'}</time>
+      </div>
+    </li>`;
+  }).join('');
+  const prior=new Date(stamp);
+  prior.setDate(prior.getDate()-1);
+  const priorId=iso(prior);
+  const yd=state.days[priorId]||{date:priorId,punches:[]};
+  const priorPunches=punchesOf(yd);
+  const priorBalance=priorPunches.length?fmtMin(workedMinutes(yd)-expectedMinutes(priorId)):'Sem registro';
+  const undoButton=punches.length
+    ? '<button class="secondary" id="undoLastBtn" type="button">↶ Corrigir última batida</button>':'';
+  const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
+  const kind=date!==iso(n)?'Jornada anterior em andamento':'Jornada de hoje';
+  const warning=overdue?`<div class="tf-alert" role="alert">
+      <div><strong>Atenção: jornada aberta há ${fmtMin(openMins)}</strong><p>Revise os horários antes de continuar.</p></div>
+      <button class="secondary" id="finishOpenBtn">Concluir agora</button>
+    </div>`:'';
+  screenEl.innerHTML=`<div class="tf-home">
+    <header class="tf-intro">
+      <div><p class="tf-eyebrow">${dayLabel.toUpperCase()} ${previewMode?'· DADOS SIMULADOS':''}</p>
+        <h2>Seu tempo,<br><span>sob controle.</span></h2>
+      </div>
+      <div class="tf-sync-line"><span class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</span></div>
+    </header>
+    ${warning}
+    <div class="tf-stage-grid">
+      <section class="tf-stage" aria-labelledby="stageTitle">
+        <div class="tf-stage-top">
+          <span class="tf-stage-label" id="stageTitle">${kind.toUpperCase()}</span>
+          <span class="tf-stage-index">01 / PRESENTE</span>
+        </div>
+        <div class="tf-datetime">
+          <div class="tf-bigclock" id="clockNow">${hm(n)}</div>
+          <div class="tf-now-caption">${fullyMarked?'Todas as marcações registradas':open?'Jornada em andamento':'Pronto para começar'}</div>
+        </div>
+        <div class="tf-stage-bottom">
+          <div class="tf-stage-action">
+            <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>
+              <span>${nextLabel}</span><span class="arrow" aria-hidden="true">↗</span>
+            </button>
+            <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
+            ${undoButton}
+          </div>
+          <div class="tf-progress ${progress.overtime?'tf-progress-overtime':''}"
+            style="--progress:${progress.goalArc};--overtime-progress:${progress.extraArc}"
+            role="img"
+            aria-label="${progress.percent===null
+              ?'Sem carga prevista'+(progress.overtime?', '+fmtMin(progress.extraMinutes)+' trabalhadas':'')
+              :progress.percent+'% da jornada'+(progress.overtime?', '+fmtMin(progress.extraMinutes)+' de horas extras':'')}">
+            <div class="tf-progress-inner">
+              <b>${progress.percent===null?'--':progress.percent+'%'}</b>
+              <span>${progress.overtime?'+'+fmtMin(progress.extraMinutes):progress.label}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="tf-timeline-panel" aria-label="Linha do tempo de marcações">
+        <div class="tf-panel-heading">
+          <h3>Sua jornada</h3><small>${pad(punches.length)} / ${pad(total)} MARCAÇÕES</small>
+        </div>
+        <ol class="tf-timeline-list">${timeline}</ol>
+        <div class="tf-panel-foot"><span>PRÓXIMO MARCO</span>
+          <strong>${escapeHtml(homeStatusLine(d))}</strong>
+        </div>
+      </section>
+    </div>
+    <section class="tf-metric-ribbon" aria-label="Indicadores de hoje">
+      <div class="tf-metric"><span>Previsto</span><strong>${fmtMin(expected)}</strong><small>Jornada contratual</small></div>
+      <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong><small>Tempo computado</small></div>
+      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>0?'good':saldo<0?'bad':''):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?'Dia apurado':'Batidas ou justificativa pendentes'}</small></div>
+      <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
+    </section>
+    <section class="tf-history-strip" aria-label="Dia anterior">
+      <div><p class="tf-eyebrow">OLHANDO PARA ONTEM</p><strong>${brDate(priorId)} · ${priorPunches.length?`${displayPunchTime(priorPunches,0)} → ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'Sem batidas registradas'}</strong></div>
+      <div class="tf-history-value">SALDO <b>${priorBalance}</b></div>
+    </section>
+  </div>`;
+  const beat=document.getElementById('beatBtn');
+  if(beat)beat.onclick=()=>addPunch(activeWorkDate(),hm(nowSP()),'button');
+  const undo=document.getElementById('undoLastBtn');
+  if(undo)undo.onclick=()=>undoLastPunch(date);
+  const finish=document.getElementById('finishOpenBtn');
+  if(finish)finish.onclick=()=>addPunch(date,hm(nowSP()),'button');
+}
 
 function brToIso(dateBr){
   const [dd,mm,yyyy] = dateBr.split('/');
@@ -986,8 +1164,8 @@ function applyEspelhoImport(parsed){
   (parsed.rows||[]).forEach(r=>{
     const dd = day(r.date);
     const punches = adaptedPunchesForModel(r.punches);
-    if(punches.length){ dd.punches = punches.map(t=>({time:t, source:'pdf_espelho'})); dd.absenceType = null; }
-    if(r.closed) dd.closed = true;
+    if(punches.length)state.days[r.date]=PontoSync.replacePunches(dd,punches.map(time=>({time,source:'pdf_espelho'})));
+    if(r.closed)state.days[r.date].closed=true;
     if(r.note) dd.note = [dd.note, r.note].filter(Boolean).join(' · ');
   });
   if(parsed.summary?.saldoAtual !== null && parsed.summary?.saldoAtual !== undefined){
@@ -1238,15 +1416,14 @@ function previewCommonSpreadsheetImport(parsed){
 function applyCommonSpreadsheetImport(parsed){
   parsed.rows.forEach(r => {
     const d = day(r.date);
-    d.punches = r.punches.map((time, index) => ({ time, source:'spreadsheet_common', slot:index, createdAt:new Date().toISOString() }));
-    d.absenceType = null;
-    d.closed = false;
-    d.note = d.note || '';
+    state.days[r.date]=PontoSync.replacePunches(d,r.punches.map(time=>({time,source:'spreadsheet_common'})));
+    state.days[r.date].note=state.days[r.date].note||'';
   });
   save();
 }
 
 function renderRegister(){
+  if(screenEl?.dataset)screenEl.dataset.view='register';
   const date = selectedRegisterDate || iso(nowSP());
   const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
   screenEl.innerHTML = `
@@ -1264,7 +1441,7 @@ function renderRegister(){
   const renderManual = () => {
     const d = state.days[date] || { punches:[], note:'' };
     const body = document.getElementById('registerBody');
-    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${d.note||''}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco</button><button class="secondary" id="medicalDayBtn">Atestado</button><button class="secondary danger-text" id="faultDayBtn">Falta</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
+    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${escapeHtml(d.note||'')}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco</button><button class="secondary" id="medicalDayBtn">Atestado</button><button class="secondary danger-text" id="faultDayBtn">Falta</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
     const draw = () => {
       const dd = state.days[regDate.value] || {punches:[]};
       regFields.innerHTML = manualFields.map((f,i)=>`<div class="time-field"><label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}" placeholder="HH:MM"></div>`).join('');
@@ -1273,11 +1450,12 @@ function renderRegister(){
     regDate.onchange = draw;
     draw();
     saveReg.onclick = () => {
-      const dd = day(regDate.value);
-      dd.absenceType = null;
-      dd.closed = false;
-      dd.punches = [...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean).map(t=>({time:t,source:'typed'}));
-      dd.note = note.value;
+      const dd=day(regDate.value);
+      if(dd.absenceType&&!confirm('Substituir '+absenceLabel(dd.absenceType)+' por batidas manuais? A ausência deixará de contar no saldo.'))return;
+      const values=[...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean);
+      try{state.days[regDate.value]=PontoSync.replacePunches(dd,values.map(time=>({time,source:'typed'})));}
+      catch(err){showToast(err.message,'warn');return;}
+      state.days[regDate.value].note=note.value;
       save();
       showToast('Marcações manuais salvas.', 'ok');
       tab='home';
@@ -1465,53 +1643,22 @@ function safeMinutes(value){
 }
 
 function annualBankStats(year){
-  const todayIso = iso(nowSP());
-  const start = `${year}-01-01`;
-  const endOfYear = `${year}-12-31`;
-  const end = endOfYear < todayIso ? endOfYear : todayIso;
-
-  let positive = 0;
-  let negative = 0;
-  let total = 0;
-  let consideredDays = 0;
-  let pendingDays = 0;
-
-  for(const id of eachDate(start, end)){
-    let exp = safeMinutes(expectedMinutes(id));
-    if(exp <= 0) continue;
-
-    const obj = state.days[id] || { date:id, punches:[] };
-    let saldo = 0;
-
-    if(obj.absenceType === 'atestado'){
-      saldo = 0;
-    } else if(obj.absenceType === 'banco' || obj.absenceType === 'falta'){
-      saldo = -exp;
-    } else if(isPending(obj)){
-      saldo = -exp;
-      pendingDays++;
-    } else {
-      saldo = safeMinutes(estimatedBankImpact(obj).saldo);
-    }
-
-    if(saldo > 0) positive += saldo;
-    if(saldo < 0) negative += Math.abs(saldo);
-    total += saldo;
-    consideredDays++;
+  const todayIso=iso(nowSP()),start=`${year}-01-01`,yearEnd=`${year}-12-31`;
+  const end=yearEnd<todayIso?yearEnd:todayIso;
+  let positive=0,negative=0,total=0,consideredDays=0,pendingDays=0;
+  for(const id of eachDate(start,end)){
+    const obj=state.days[id]||{date:id,punches:[]};
+    const expected=safeMinutes(expectedMinutes(id));
+    if(expected<=0&&!obj.absenceType&&!obj.official&&!(obj.punches||[]).length)continue;
+    if(isPending(obj)){pendingDays++;continue;}
+    if(!complete(obj))continue;
+    const saldo=safeMinutes(estimatedBankImpact(obj).saldo);
+    if(saldo>0)positive+=saldo;
+    if(saldo<0)negative+=Math.abs(saldo);
+    total+=saldo;consideredDays++;
   }
-
-  return {
-    year,
-    start,
-    end,
-    positive:safeMinutes(positive),
-    negative:safeMinutes(negative),
-    total:safeMinutes(total),
-    consideredDays,
-    pendingDays
-  };
+  return {year,start,end,positive,negative,total,consideredDays,pendingDays};
 }
-
 
 function diagnosticRowForDay(date){
   const d = state.days[date] || { date, punches:[] };
@@ -1529,7 +1676,7 @@ function diagnosticRowForDay(date){
     date,
     expected: exp,
     worked,
-    saldo: impact.saldo,
+    saldo: isPending(d)?null:impact.saldo,
     status: status.text,
     cls: status.cls,
     punches: punchesOf(d).map(p => p.time).join(' / ') || '--',
@@ -1591,7 +1738,7 @@ function renderMonthDiagnostic(year, month){
     <div class="diagnostic-grid">
       <span>Esperado <b>${fmtMin(r.expected)}</b></span>
       <span>Trabalhado <b>${fmtMin(r.worked)}</b></span>
-      <span>Saldo <b class="${r.saldo<0?'danger':'ok'}">${fmtMin(r.saldo)}</b></span>
+      <span>Saldo <b class="${r.saldo===null?'':r.saldo<0?'danger':'ok'}">${r.saldo===null?'--:--':fmtMin(r.saldo)}</b></span>
       <span>Fonte <b>${r.source}</b></span>
     </div>
     <div class="diagnostic-status ${r.cls}">${r.status}</div>
@@ -1600,6 +1747,7 @@ function renderMonthDiagnostic(year, month){
 }
 
 function renderMonth(){
+  if(screenEl?.dataset)screenEl.dataset.view='month';
   const n = nowSP();
   const currentValue = `${n.getFullYear()}-${pad(n.getMonth()+1)}`;
   const value = selectedMonthValue || currentValue;
@@ -1609,23 +1757,66 @@ function renderMonth(){
   const st = monthStats(year, month);
   const annualStats = annualBankStats(year);
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
-  const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
+  const saldoFonteLongo=st.officialMonth
+    ? 'Saldo mensal obtido do espelho oficial importado.'
+    : 'Estimativa de dias apurados, ausências registradas e dados oficiais; dias pendentes não são descontados.';
   const rowsHtml = st.rows.map(r=>{
     const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
     const objForShort = state.days[r.date] || {date:r.date,punches:r.punches||[]};
     const short = objForShort.absenceType ? absenceLabel(objForShort.absenceType) : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
-    return `<div class="day-item ${r.future ? 'future-day' : 'clickable-day'}" ${r.future ? '' : `data-day="${r.date}"`}><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${(!r.future && isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]})) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.future ? '' : (r.saldo<0?'neg':r.saldo>0?'pos':'')}">${r.future ? '--:--' : fmtMin(r.saldo)}</span></div></div><div class="day-sub">${r.future ? 'Dia futuro' : short}</div></div>`;
+    const waiting=r.pending&&!r.future;
+    return `<div class="day-item ${r.future?'future-day':'clickable-day'}" ${r.future?'':`data-day="${r.date}"`}>
+      <div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${waiting?'<span class="alert" title="Pendente de conferência">!</span>':''}
+        <span class="bal ${r.future||waiting?'':r.saldo<0?'neg':r.saldo>0?'pos':''}">
+          ${r.future||waiting?'--:--':fmtMin(r.saldo)}</span></div></div>
+      <div class="day-sub">${r.future?'Dia futuro':short}</div></div>`;
   }).join('');
   const bankBody = st.officialBank ?
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
-  const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
+  const monthMap = st.rows.map(r=>{
+    const typ=r.future?'future'
+      :r.absenceType==='atestado'?'medical'
+      :r.absenceType==='banco'?'bank'
+      :r.absenceType==='falta'?'absence'
+      :r.expected===0&&!(r.punches||[]).length?'off'
+      :!(r.punches||[]).length?'empty'
+      :r.pending?'incomplete'
+      :r.saldo<0?'negative':'positive';
+    const future=r.future;
+    return '<button type="button" class="tf-day-pixel tf-'+typ+(future?'':' clickable-day')+'"'
+      +(future?' disabled':' data-day="'+r.date+'"')
+      +' title="'+brDate(r.date)+' | '+(future?'Dia futuro':r.absenceType?absenceLabel(r.absenceType):r.pending?'Pendente, saldo não apurado':fmtMin(r.saldo))+'">'
+      +'<span class="tf-day-number">'+Number(r.date.slice(-2))+'</span>'
+      +'<span class="tf-day-mark" aria-hidden="true"></span></button>';
+  }).join('');
+  const emptyMonth=!st.rows.some(r=>r.done||(r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
-  <section class="card"><div class="section-head"><div><h2>Mês</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
+  <div class="tf-section-intro">
+    <div><p class="tf-eyebrow">02 / HISTÓRICO MENSAL</p>
+      <h2>Um mês.<br><span>Todos os movimentos.</span></h2></div>
+    <p>Uma leitura visual da sua jornada, com cada dia ao alcance de um toque.</p>
+  </div>
+  <section class="tf-month-map" aria-label="Mapa dos dias do mês">
+    <div class="tf-map-heading"><h3>Mapa da jornada</h3><span>${monthNames[month]} / ${year}</span></div>
+    <div class="tf-month-heatmap">${monthMap}</div>
+    <div class="tf-month-legend">
+      <span><i class="legend-good"></i> Positivo</span>
+      <span><i class="legend-bad"></i> Negativo</span>
+      <span><i class="legend-pending"></i> Incompleto / Atestado</span>
+      <span><i class="legend-bank"></i> Folga banco</span>
+      <span><i class="legend-absence"></i> Falta</span>
+      <span><i class="legend-empty"></i> Sem registro</span>
+      <span><i class="legend-off"></i> Folga / feriado</span>
+    </div>
+  </section>
+  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Dias a conferir</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo} Sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial}.</p></section>
   ${isTraditionalModel()
-    ? `<section class="card"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
-    : `<section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
+    ? `<section class="card tf-bank-summary"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: somente dias apurados e ausências registradas; pendências não viram horas negativas.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
+    : `<section class="card tf-bank-summary"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
   ${renderMonthDrawer('records', 'Registro mensal', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml, `${st.rows.length} dia${st.rows.length===1?'':'s'}`)}
   ${renderMonthDiagnostic(year, month)}
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
@@ -1661,14 +1852,18 @@ function renderImport(){
   };
 }
 function renderProfileScreen(){
+  if(screenEl?.dataset)screenEl.dataset.view='config';
   const currentModel = state.profile?.model || 'tribuna_hub_prog';
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
-  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${state.user?.name || 'Usuário Google'}<br>${state.user?.email || ''}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${cloudLastError ? `<p class="muted">Último erro: ${cloudLastError}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Baixar da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
+  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${previewMode
+  ? '<p class="muted">Modo de demonstração. Não lê nem escreve no Firebase. Os dados são de teste.</p>'
+  : `${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button>`}
+  <button class="secondary full" id="disconnectGoogle">${previewMode?'Sair da demonstração':'Desconectar conta Google'}</button></section>
   <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
-  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Use o reset apenas se quiser limpar completamente os dados salvos neste navegador.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
+  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Exporte seus registros antes de importar ou apagar dados.</p><button class="secondary full" id="backupAll">Baixar backup JSON</button><p class="muted">O reset limpa apenas o navegador desta conta.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
 
   const cfgModelEl = document.getElementById('cfgModel');
   const cfgCityEl = document.getElementById('cfgCity');
@@ -1684,10 +1879,17 @@ function renderProfileScreen(){
   drawScale();
   cfgModelEl.onchange = drawScale;
 
+  document.getElementById('backupAll').onclick=()=>{
+    const data={app:'eu-tenho-um-ponto',version:APP_VERSION,exportedAt:new Date().toISOString(),userId:state.user?.uid||null,data:stateForCloud()};
+    downloadBlob('meu-ponto-backup-'+iso(nowSP())+'.json',JSON.stringify(data,null,2),'application/json;charset=utf-8');
+    showToast('Backup JSON exportado. Guarde em local seguro.','ok');
+  };
   document.getElementById('reset').onclick = () => {
     if(confirm('Limpar todos os dados locais?')){
-      localStorage.removeItem(STORAGE_KEY);
-      state = load();
+      const uid=state.user?.uid;
+      if(uid)localStorage.removeItem(storageKey(uid));
+      const signedUser=state.user;
+      state=freshState();state.user=signedUser;
       tab = 'home';
       render();
     }
@@ -1705,18 +1907,18 @@ function renderProfileScreen(){
     showToast('Configurações salvas.', 'ok');
   };
 
-  document.getElementById('syncNow').onclick = async () => {
+  if(!previewMode)document.getElementById('syncNow').onclick = async () => {
     const ok = await pushStateToCloud(true);
     showToast(ok ? 'Dados enviados para a nuvem.' : `Não foi possível enviar: ${cloudLastError || 'erro desconhecido'}`, ok ? 'ok' : 'warn');
     renderProfileScreen();
   };
 
-  document.getElementById('pullCloud').onclick = async () => {
+  if(!previewMode)document.getElementById('pullCloud').onclick = async () => {
     await pullStateFromCloud();
   };
 
   document.getElementById('disconnectGoogle').onclick = () => {
-    if(confirm('Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
+    if(confirm(previewMode?'Sair da demonstração? Os registros locais de teste serão mantidos.':'Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
       logoutGoogle();
       showToast('Conta Google desconectada.', 'warn');
     }
@@ -1768,12 +1970,14 @@ setInterval(() => {
   }
 }, 1000);
 
-initFirebaseAuth()
+if(previewMode)startPreview();
+else initFirebaseAuth()
   .catch((err) => console.warn("Firebase init falhou:", err))
   .finally(() => render());
 
 
 async function hydrateFromCloud(mode='smart'){
+  if(previewMode)return false;
   if(!state.user?.uid){
     cloudReady = false;
     cloudLastError = 'Usuário não conectado.';
@@ -1799,7 +2003,7 @@ async function hydrateFromCloud(mode='smart'){
       state.imports = merged.imports || [];
       state.officialBank = merged.officialBank || {};
       state.clientModifiedAt = merged.clientModifiedAt || state.clientModifiedAt;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      persistLocal();
     }
 
     cloudReady = true;
@@ -1817,6 +2021,7 @@ async function hydrateFromCloud(mode='smart'){
 }
 
 async function pushStateToCloud(immediate=false){
+  if(previewMode)return false;
   if(!state.user?.uid){
     cloudReady = false;
     cloudLastError = 'Usuário não conectado.';
@@ -1834,15 +2039,16 @@ async function pushStateToCloud(immediate=false){
       const ref = await cloudDocRef();
       if(!ref) throw new Error('Referência Firestore não criada.');
 
-      await firestoreFns.setDoc(ref, {
-        ...stateForCloud(),
-        userMeta: {
-          name: state.user?.name || '',
-          email: state.user?.email || '',
-          photoURL: state.user?.photoURL || ''
-        },
-        updatedAt: firestoreFns.serverTimestamp()
-      }, { merge: true });
+      const uid=state.user.uid;
+      const merged=await firestoreFns.runTransaction(firebaseDb,async tx=>{
+        const snap=await tx.get(ref);
+        const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'smart'):stateForCloud();
+        tx.set(ref,{...result,userMeta:{
+          name:state.user?.name||'',email:state.user?.email||'',photoURL:state.user?.photoURL||''
+        },updatedAt:firestoreFns.serverTimestamp()},{merge:true});
+        return result;
+      });
+      if(state.user?.uid===uid){state.days=mergeDays(state.days,merged.days||{});persistLocal();}
 
       cloudReady = true;
       cloudLastError = '';
@@ -1865,7 +2071,7 @@ async function pushStateToCloud(immediate=false){
 async function pullStateFromCloud(){
   const ok = await hydrateFromCloud('cloud');
   if(ok){
-    showToast('Dados baixados da nuvem.', 'ok');
+    showToast('Dados conciliados com a nuvem.', 'ok');
     render();
   } else {
     showToast(`Não foi possível baixar: ${cloudLastError || 'erro desconhecido'}`, 'warn');

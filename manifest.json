@@ -3,8 +3,8 @@
   "short_name": "Meu Ponto",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0a1118",
-  "theme_color": "#0f172a",
+  "background_color": "#0b0b0d",
+  "theme_color": "#0b0b0d",
   "icons": [
     {
       "src": "icon.svg",
@@ -12,5 +12,5 @@
       "type": "image/svg+xml"
     }
   ],
-  "description": "Controle pessoal de ponto, jornada e banco de horas."
+  "description": "Seu controle de ponto pessoal com visual Black & Gold."
 }

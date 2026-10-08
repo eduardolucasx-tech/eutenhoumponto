@@ -1,42 +1,61 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Eu tenho um ponto.</title>
-  <meta name="theme-color" content="#0f172a" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#0b0b0d"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="description" content="Eu tenho um ponto. Seu tempo em perspectiva."/>
+<title>Eu tenho um ponto · Black & Gold v1.8.2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="icon" href="icon.svg" type="image/svg+xml"/>
+<link rel="stylesheet" href="style.css"/>
+<link rel="stylesheet" href="theme-v1.6.css"/>
+<link rel="stylesheet" href="timeflow-v1.7.css"/>
+<link rel="stylesheet" href="timeflow-map-v1.7.css"/>
+<link rel="stylesheet" href="timeflow-black-gold-v1.8.css"/>
+
 </head>
 <body>
-  <div id="app" class="app-shell">
-    <header class="topbar">
-      <button id="homeBrand" class="brand brand-button" type="button" aria-label="Voltar para bater ponto">
-        <div class="logo">1.</div>
-        <div>
-          <h1>Eu tenho um ponto.</h1>
-          <p id="modelBadge">v1.4.1</p>
-        </div>
+<div id="app" class="app-shell tf-app">
+  <aside class="side-panel" aria-label="Navegação">
+    <div class="rail-identity">
+      <button id="homeBrand" class="brand brand-button tf-brand" type="button" aria-label="Voltar ao início">
+        <span class="tf-mark">e<span>.</span></span>
+        <span class="tf-brand-copy"><strong>eu tenho<br>um ponto<span>.</span></strong><small>BLACK & GOLD / 1.8.2</small></span>
       </button>
-      <button id="profileBtn" class="avatar" aria-label="Perfil">P</button>
-    </header>
-
-    <main id="screen"></main>
-
-    <nav class="bottom-nav" id="bottomNav">
-      <button data-tab="home" class="active"><span class="nav-icon">In</span><span>Início</span></button>
-      <button data-tab="register"><span class="nav-icon">Rg</span><span>Registrar</span></button>
-      <button data-tab="month"><span class="nav-icon">Ms</span><span>Mês</span></button>
-      <button data-tab="config"><span class="nav-icon">Pf</span><span>Perfil</span></button>
+    </div>
+    <div class="rail-heading">SEU ESPAÇO</div>
+    <nav id="bottomNav" class="bottom-nav" aria-label="Seções do aplicativo">
+      <button type="button" data-tab="home" class="active"><span class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></span><span>Visão geral</span></button>
+      <button type="button" data-tab="register"><span class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></span><span>Registrar</span></button>
+      <button type="button" data-tab="month"><span class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></span><span>Minha jornada</span></button>
+      <button type="button" data-tab="config"><span class="nav-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg></span><span>Preferências</span></button>
     </nav>
+    <div class="rail-spacer"></div>
+    <div class="rail-footnote"><span class="tf-indicator"></span><span>CONTROLE DO SEU TEMPO<br><small>Um dia de cada vez.</small></span></div>
+  </aside>
+  <div class="app-workspace">
+    <header class="topbar">
+      <div class="topbar-context">
+        <span class="tf-overline">PAINEL PESSOAL <span class="tf-slash">/</span> JORNADA</span>
+        <p id="modelBadge">v1.8.2</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="tf-live"><span></span> AMERICA/SÃO PAULO</span>
+        <button id="profileBtn" class="avatar" type="button" aria-label="Abrir perfil">P</button>
+      </div>
+    </header>
+    <main id="screen" class="tf-screen" aria-live="polite"></main>
+    <footer class="workspace-footer">EU TENHO UM PONTO <span>·</span> BLACK & GOLD <span>·</span> V1.8.2</footer>
   </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="firebase-config.js"></script>
-  <script src="app.js"></script>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="firebase-config.js"></script>
+<script src="sync-core.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
