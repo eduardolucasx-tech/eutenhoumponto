@@ -35,7 +35,9 @@
       return {...old,...data,id:old?.id||uid(),createdAt:data.createdAt||old?.createdAt||new Date().toISOString(),slot:index};
     });
     if(new Set(punches.map(p=>p.time)).size!==punches.length)throw Error('Existem batidas duplicadas.');
-    return {...d,punches,deletedPunchIds:uniq([...d.deletedPunchIds,...available.map(p=>p.id)]),
+    const note=d.absenceType&&d.note===absenceNames[d.absenceType]
+      ? d.absenceBackup?.note||'' : d.note||'';
+    return {...d,punches,note,deletedPunchIds:uniq([...d.deletedPunchIds,...available.map(p=>p.id)]),
       absenceType:null,absenceBackup:null,absenceRevision:d.absenceRevision+1,closed:false};
   }
   function addPunch(original,time,source='manual'){
@@ -106,10 +108,16 @@
     const absenceWinner=l.absenceRevision>c.absenceRevision?l
       :c.absenceRevision>l.absenceRevision?c
       :l.absenceRevision===0?(l.absenceType?l:c):l;
-    return {...c,...l,date:l.date||c.date||date,punches:merged,deletedPunchIds,
+    const revisionConflict=l.absenceRevision!==c.absenceRevision;
+    const absenceActive=Boolean(absenceWinner.absenceType);
+    return {...c,...l,date:l.date||c.date||date,
+      punches:absenceActive?[]:merged,
+      deletedPunchIds:absenceActive?uniq([...deletedPunchIds,...merged.map(p=>p.id)]):deletedPunchIds,
       absenceType:absenceWinner.absenceType||null,
+      absenceBackup:absenceWinner.absenceBackup||l.absenceBackup||c.absenceBackup||null,
       absenceRevision:Math.max(l.absenceRevision,c.absenceRevision),
-      closed:absenceWinner.absenceType?true:Boolean(l.closed||c.closed)};
+      note:revisionConflict?(absenceWinner.note||''):(l.note||c.note||''),
+      closed:absenceActive?true:revisionConflict?Boolean(absenceWinner.closed):Boolean(l.closed||c.closed)};
   }
   function mergeDays(localDays={},cloudDays={}){
     const result={};
