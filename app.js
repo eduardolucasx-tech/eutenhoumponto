@@ -1,5 +1,8 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.6.0';
+const APP_VERSION = 'v1.6.1-preview';
+const PREVIEW_UID = '__local_preview_v161__';
+let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
+function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -69,6 +72,7 @@ function hasRealFirebaseConfig(){
 }
 
 async function initFirebaseAuth(){
+  if(previewMode) return false;
   if(firebaseReady || !hasRealFirebaseConfig()) return firebaseReady;
   try{
     const appMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
@@ -84,6 +88,7 @@ async function initFirebaseAuth(){
     firebaseReady = true;
 
     authMod.onAuthStateChanged(firebaseAuth, async (user) => {
+      if(previewMode) return;
       if(user){
         if(state.user?.uid!==user.uid)state=load(user.uid);
         state.user = {
@@ -196,12 +201,14 @@ function showToast(message, type='info'){
   toast.addEventListener('click', remove);
 }
 function syncStatusLabel(){
+  if(previewMode)return 'Prévia local · sem nuvem';
   if(!state.user) return 'Sem conta conectada';
   if(cloudReady && cloudLastSyncAt) return `Sincronizado às ${hm(cloudLastSyncAt)}`;
   if(cloudLastError) return 'Local: erro na nuvem';
   return cloudReady ? 'Sincronizado com a nuvem' : 'Salvando localmente';
 }
 function syncStatusClass(){
+  if(previewMode)return 'neutral';
   return cloudReady ? 'ok' : 'warn';
 }
 
@@ -235,12 +242,25 @@ function load(uid=null){
   }catch(err){console.warn('Falha ao ler dados locais:',err);return fresh;}
 }
 function persistLocal(){
-  if(state.user?.uid)localStorage.setItem(storageKey(state.user.uid),JSON.stringify(state));
+  if(state.user?.uid){
+    try{localStorage.setItem(storageKey(state.user.uid),JSON.stringify(state));}
+    catch(e){if(!previewMode)console.warn('Armazenamento indisponível:',e);}
+  }
+}
+function startPreview(){
+  previewMode=true;
+  cloudReady=false;
+  cloudLastError='';
+  state=load(PREVIEW_UID);
+  state.user=previewUser();
+  tab='home';
+  persistLocal();
+  render();
 }
 function save(){
   state.clientModifiedAt=new Date().toISOString();
   persistLocal();
-  pushStateToCloud(true).then(ok=>{if(ok)renderHeaderProfile();});
+  if(!previewMode)pushStateToCloud(true).then(ok=>{if(ok)renderHeaderProfile();});
   render();
 }
 function model(){ return state.profile ? MODELS[state.profile.model] : null; }
@@ -690,12 +710,27 @@ async function loginWithGoogle(){
     await firebaseFns.signInWithPopup(firebaseAuth, firebaseProvider);
   }catch(err){
     console.warn('Falha no login Google:', err);
-    if(typeof showToast === 'function') showToast(`Erro no login Google: ${err?.message || err}`, 'warn');
-    else alert(`Erro no login Google: ${err?.message || err}`);
+    const code=err?.code||'';
+    const message=code==='auth/unauthorized-domain'
+      ? 'Este endereço de preview não está autorizado no Firebase. Use Prévia local ou publique em domínio autorizado.'
+      : code==='auth/popup-blocked'
+      ? 'O navegador bloqueou o pop-up. Permita pop-ups no site ou use Prévia local.'
+      : code==='auth/operation-not-allowed'
+      ? 'Login Google não foi habilitado no Firebase Authentication.'
+      : 'Não foi possível autenticar: '+(err?.message||err);
+    if(typeof showToast==='function')showToast(message,'warn');
+    else alert(message);
   }
 }
 
 async function logoutGoogle(){
+  if(previewMode){
+    previewMode=false;
+    state=freshState();
+    tab='home';
+    render();
+    return;
+  }
   try{
     if(firebaseReady && firebaseAuth && firebaseFns){
       await firebaseFns.signOut(firebaseAuth);
@@ -709,9 +744,10 @@ async function logoutGoogle(){
 }
 
 function renderLogin(){
-  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Entre com sua conta Google para sincronizar seu perfil, marcações e banco de horas.</p><button class="google" id="googleLogin">Entrar com Google</button><p class="muted" style="margin-top:12px">Versão ${APP_VERSION}</p></section></div>`;
+  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Escolha como acessar o aplicativo.</p><button class="google" id="googleLogin">Entrar com Google</button><button class="secondary full" id="demoLogin">Experimentar sem login</button><p class="muted" style="margin-top:12px">A demonstração usa armazenamento local separado. Nenhum registro será enviado ao Firebase.</p><p class="muted">Versão ${APP_VERSION}</p></section></div>`;
   const btn = document.getElementById('googleLogin');
-  if(btn) btn.onclick = () => loginWithGoogle();
+  if(btn)btn.onclick=()=>loginWithGoogle();
+  document.getElementById('demoLogin').onclick=startPreview;
 }
 
 function renderModelChoice(){
@@ -1669,7 +1705,10 @@ function renderProfileScreen(){
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
   screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button><button class="secondary full" id="disconnectGoogle">Desconectar conta Google</button></section>
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${previewMode
+  ? '<p class="muted">Modo de demonstração. Não lê nem escreve no Firebase. Os dados são de teste.</p>'
+  : `${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button>`}
+  <button class="secondary full" id="disconnectGoogle">${previewMode?'Sair da demonstração':'Desconectar conta Google'}</button></section>
   <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
   <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Exporte seus registros antes de importar ou apagar dados.</p><button class="secondary full" id="backupAll">Baixar backup JSON</button><p class="muted">O reset limpa apenas o navegador desta conta.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
 
@@ -1715,18 +1754,18 @@ function renderProfileScreen(){
     showToast('Configurações salvas.', 'ok');
   };
 
-  document.getElementById('syncNow').onclick = async () => {
+  if(!previewMode)document.getElementById('syncNow').onclick = async () => {
     const ok = await pushStateToCloud(true);
     showToast(ok ? 'Dados enviados para a nuvem.' : `Não foi possível enviar: ${cloudLastError || 'erro desconhecido'}`, ok ? 'ok' : 'warn');
     renderProfileScreen();
   };
 
-  document.getElementById('pullCloud').onclick = async () => {
+  if(!previewMode)document.getElementById('pullCloud').onclick = async () => {
     await pullStateFromCloud();
   };
 
   document.getElementById('disconnectGoogle').onclick = () => {
-    if(confirm('Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
+    if(confirm(previewMode?'Sair da demonstração? Os registros locais de teste serão mantidos.':'Desconectar a conta Google deste navegador? Seus dados locais de ponto serão mantidos.')){
       logoutGoogle();
       showToast('Conta Google desconectada.', 'warn');
     }
@@ -1778,12 +1817,14 @@ setInterval(() => {
   }
 }, 1000);
 
-initFirebaseAuth()
+if(previewMode)startPreview();
+else initFirebaseAuth()
   .catch((err) => console.warn("Firebase init falhou:", err))
   .finally(() => render());
 
 
 async function hydrateFromCloud(mode='smart'){
+  if(previewMode)return false;
   if(!state.user?.uid){
     cloudReady = false;
     cloudLastError = 'Usuário não conectado.';
@@ -1827,6 +1868,7 @@ async function hydrateFromCloud(mode='smart'){
 }
 
 async function pushStateToCloud(immediate=false){
+  if(previewMode)return false;
   if(!state.user?.uid){
     cloudReady = false;
     cloudLastError = 'Usuário não conectado.';
