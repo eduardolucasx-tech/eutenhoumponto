@@ -801,6 +801,7 @@ function renderScaleSetup(){
   saveScale.onclick = () => { state.profile.scaleStartDate = scaleStart.value; save(); };
 }
 function renderHome(){
+  if(screenEl?.dataset)screenEl.dataset.view='home';
   const n=nowSP();
   const date=activeWorkDate();
   const d=day(date);
@@ -1369,6 +1370,7 @@ function applyCommonSpreadsheetImport(parsed){
 }
 
 function renderRegister(){
+  if(screenEl?.dataset)screenEl.dataset.view='register';
   const date = selectedRegisterDate || iso(nowSP());
   const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
   screenEl.innerHTML = `
@@ -1722,6 +1724,7 @@ function renderMonthDiagnostic(year, month){
 }
 
 function renderMonth(){
+  if(screenEl?.dataset)screenEl.dataset.view='month';
   const n = nowSP();
   const currentValue = `${n.getFullYear()}-${pad(n.getMonth()+1)}`;
   const value = selectedMonthValue || currentValue;
@@ -1811,6 +1814,7 @@ function renderImport(){
   };
 }
 function renderProfileScreen(){
+  if(screenEl?.dataset)screenEl.dataset.view='config';
   const currentModel = state.profile?.model || 'tribuna_hub_prog';
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
