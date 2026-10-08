@@ -276,6 +276,26 @@ function startPreview(){
       state.days[iso(today)]={date:iso(today),punches:[{time:`${pad(Math.floor(start/60))}:${pad(start%60)}`,source:'preview_example'}],note:'Exemplo da demonstração'};
     }
   }
+  // Rota demonstrativa para validar o resultado da hora extra no próprio site.
+  if(new URLSearchParams(window.location.search).get('overtime')==='1'){
+    state.profile={
+      ...state.profile,model:'personalizavel',
+      city:'Santos',demoData:true,
+      customHours:{0:480,1:480,2:480,3:480,4:480,5:480,6:480},
+      lunchMinutes:60
+    };
+    const today=iso(nowSP());
+    state.days[today]={
+      date:today,closed:true,
+      punches:[
+        {time:'09:00',source:'preview_example'},
+        {time:'12:00',source:'preview_example'},
+        {time:'13:00',source:'preview_example'},
+        {time:'20:00',source:'preview_example'}
+      ],
+      note:'Demonstração: 10h trabalhadas numa jornada de 8h (125%).'
+    };
+  }
   tab='home';
   persistLocal();
   render();
