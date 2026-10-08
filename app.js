@@ -85,6 +85,7 @@ async function initFirebaseAuth(){
 
     authMod.onAuthStateChanged(firebaseAuth, async (user) => {
       if(user){
+        if(state.user?.uid!==user.uid)state=load(user.uid);
         state.user = {
           uid: user.uid,
           name: user.displayName || "Usuário Google",
@@ -92,8 +93,9 @@ async function initFirebaseAuth(){
           photoURL: user.photoURL || "",
           provider: "firebase_google"
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        persistLocal();
         await hydrateFromCloud('smart');
+        if(state.user?.uid===user.uid)await pushStateToCloud(true);
         render();
       } else {
         cloudReady = false;
@@ -128,19 +130,8 @@ function countDayEntries(days){
 }
 
 
-function mergeDay(localDay, cloudDay){
-  if(!localDay) return cloudDay;
-  if(!cloudDay) return localDay;
-  const punchMap = new Map();
-  [...(cloudDay.punches || []), ...(localDay.punches || [])].forEach(p => { if(p?.time) punchMap.set(p.time, {...p}); });
-  return { ...cloudDay, ...localDay, punches:[...punchMap.values()].sort((a,b)=>parseHM(a.time)-parseHM(b.time)), absenceType: localDay.absenceType || cloudDay.absenceType || null, note: localDay.note || cloudDay.note || '' };
-}
-function mergeDays(localDays={}, cloudDays={}){
-  const keys = new Set([...Object.keys(localDays||{}), ...Object.keys(cloudDays||{})]);
-  const out = {};
-  keys.forEach(k => out[k] = mergeDay(localDays[k], cloudDays[k]));
-  return out;
-}
+function mergeDay(localDay,cloudDay){return PontoSync.mergeDay(localDay,cloudDay,localDay?.date||cloudDay?.date);}
+function mergeDays(localDays={},cloudDays={}){return PontoSync.mergeDays(localDays,cloudDays);}
 function mergeCloudWithLocal(cloud, mode='smart'){
   const local = stateForCloud();
   const cloudDays = cloud.days || {};
@@ -169,11 +160,12 @@ function renderFallback(message='Não consegui carregar esta tela.'){
   screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${message}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
   const btn = document.getElementById('fallbackReset');
   if(btn){
-    btn.onclick = () => {
-      localStorage.removeItem(STORAGE_KEY);
-      state = load();
-      tab = 'home';
-      render();
+    btn.onclick=()=>{
+      if(!confirm('Limpar os dados locais desta conta? O Firestore não será apagado.'))return;
+      if(state.user?.uid)localStorage.removeItem(storageKey(state.user.uid));
+      const signedUser=state.user;
+      state=freshState();state.user=signedUser;
+      tab='home';render();
     };
   }
 }
@@ -221,42 +213,50 @@ let importSubView = 'sheet';
 let monthDrawers = { records:true, diagnostic:false };
 let selectedRegisterDate = null;
 const screenEl = document.getElementById('screen');
-function load(){
-  const fresh = { user:null, profile:null, days:{}, imports:[], officialBank:{}, clientModifiedAt:null };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return fresh;
-    const parsed = JSON.parse(raw);
-    if(!parsed || typeof parsed !== 'object') return fresh;
-    if(parsed.profile && !MODELS[parsed.profile.model]) parsed.profile = null;
-    parsed.days = parsed.days || {};
-    parsed.imports = parsed.imports || [];
-    parsed.officialBank = parsed.officialBank || {};
-    return { ...fresh, ...parsed };
-  } catch (e) {
-    console.warn('Falha ao carregar dados locais. Reiniciando prévia.', e);
-    localStorage.removeItem(STORAGE_KEY);
-    return fresh;
-  }
+function freshState(){return {user:null,profile:null,days:{},imports:[],officialBank:{},clientModifiedAt:null};}
+function storageKey(uid){return STORAGE_KEY+':'+uid;}
+function load(uid=null){
+  const fresh=freshState();
+  if(!uid)return fresh;
+  try{
+    let raw=localStorage.getItem(storageKey(uid));
+    if(!raw){
+      const legacy=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+      if(legacy?.user?.uid===uid)raw=JSON.stringify(legacy);
+    }
+    if(!raw)return fresh;
+    const parsed=JSON.parse(raw);
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return fresh;
+    if(parsed.profile&&!MODELS[parsed.profile.model])parsed.profile=null;
+    parsed.days=parsed.days||{};
+    parsed.imports=Array.isArray(parsed.imports)?parsed.imports:[];
+    parsed.officialBank=parsed.officialBank||{};
+    return {...fresh,...parsed,user:null};
+  }catch(err){console.warn('Falha ao ler dados locais:',err);return fresh;}
 }
-function save(){ state.clientModifiedAt = new Date().toISOString(); localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushStateToCloud(true).then(ok => { if(ok) renderHeaderProfile(); }); render(); }
+function persistLocal(){
+  if(state.user?.uid)localStorage.setItem(storageKey(state.user.uid),JSON.stringify(state));
+}
+function save(){
+  state.clientModifiedAt=new Date().toISOString();
+  persistLocal();
+  pushStateToCloud(true).then(ok=>{if(ok)renderHeaderProfile();});
+  render();
+}
 function model(){ return state.profile ? MODELS[state.profile.model] : null; }
 function day(date=iso(nowSP())){ if(!state.days[date]) state.days[date] = { date, punches:[], note:'' }; return state.days[date]; }
 function punchesOf(dayObj){ return [...(dayObj.punches||[])]; }
 function isOpenShift(dayObj){
-  if(!state.profile || !dayObj) return false;
-  const p = punchesOf(dayObj);
-  return expectedMinutes(dayObj.date) > 0 && p.length > 0 && p.length < requiredPunches();
+  if(!state.profile||!dayObj||dayObj.absenceType||dayObj.closed)return false;
+  const p=punchesOf(dayObj);
+  return p.length>0&&p.length<requiredPunches();
 }
 function openShiftDate(){
-  const now = nowSP();
-  for(let offset=1; offset<=7; offset++){
-    const d = new Date(now); d.setDate(now.getDate()-offset);
-    const id = iso(d);
-    if(isOpenShift(state.days[id])) return id;
-  }
-  const today = iso(now);
-  if(isOpenShift(state.days[today])) return today;
+  const now=nowSP(),today=iso(now);
+  if(isOpenShift(state.days[today]))return today;
+  const prev=new Date(now);prev.setDate(prev.getDate()-1);
+  const yesterday=iso(prev),old=state.days[yesterday];
+  if(isOpenShift(old)&&minutesSinceFirstPunch(yesterday,old)<=20*60)return yesterday;
   return null;
 }
 function activeWorkDate(){ return openShiftDate() || iso(nowSP()); }
@@ -285,7 +285,9 @@ function undoLastPunch(date=activeWorkDate()){
     showToast('Não há batidas para remover.', 'warn');
     return;
   }
-  const removed = d.punches.pop();
+  const result=PontoSync.removeLastPunch(d);
+  state.days[date]=result.day;
+  const removed=result.removed;
   save();
   showToast(`Última batida removida: ${removed?.time || '--:--'}.`, 'warn');
 }
@@ -311,7 +313,7 @@ function grossMinutesForExpected(net){
   if(!net || net <= 0) return 0;
   // Regra Tribuna: até 6h brutas desconta 15min; acima de 6h brutas desconta 1h.
   // Para prever o fim da jornada, 8h líquidas viram 9h de permanência; 4h líquidas viram 4h15.
-  return net >= 360 ? net + 60 : net + 15;
+  return net > 345 ? net + 60 : net + 15;
 }
 function homeStatusLine(dayObj){
   const p = punchesOf(dayObj);
@@ -350,7 +352,9 @@ function workedMinutes(dayObj, partial=false){
   };
   if(model().punchMode === 'autoLunch'){
     if(p.length < 2){
-      return partial ? safeDiff(currentMin, parseHM(p[0].time)) : 0;
+      if(!partial)return 0;
+      const bruto=safeDiff(currentMin,parseHM(p[0].time));
+      return bruto<=15?bruto:Math.max(0,bruto-(bruto>360?60:15));
     }
     const bruto = safeDiff(parseHM(p[p.length-1].time), parseHM(p[0].time));
     if(bruto <= 15) return bruto;
@@ -404,18 +408,15 @@ function absenceLabel(type){
 }
 function setDayAbsence(date, type){
   const d = day(date);
-  d.absenceType = type;
-  d.punches = [];
-  d.closed = true;
+  state.days[date]=PontoSync.setAbsence(d,type);
   d.note = absenceLabel(type);
   save();
   showToast(`${absenceLabel(type)} aplicada em ${brDate(date)}.`, type === 'atestado' ? 'ok' : 'warn');
 }
 function clearDayAbsence(date){
   const d = day(date);
-  d.absenceType = null;
-  if(d.note && ['Folga banco','Atestado','Falta'].includes(d.note)) d.note = '';
-  d.closed = false;
+  state.days[date]=PontoSync.clearAbsence(d);
+  if(['Folga banco','Atestado','Falta'].includes(state.days[date].note))state.days[date].note='';
   save();
   showToast(`Ausência removida de ${brDate(date)}.`, 'ok');
 }
@@ -602,9 +603,13 @@ function addPunch(date, time, source='manual'){
     showToast('Essa marcação já existe neste dia.', 'warn');
     return;
   }
-  d.punches.push({time, source, createdAt:new Date().toISOString()});
+  if(d.punches.length>=requiredPunches()){
+    showToast('Jornada completa. Corrija as batidas na aba Registrar.','warn');return;
+  }
+  try{state.days[date]=PontoSync.addPunch(d,time,source);}
+  catch(err){showToast(err.message,'warn');return;}
   save();
-  const idx = d.punches.length - 1;
+  const idx=state.days[date].punches.length-1;
   showToast(`${labelForIndex(Math.min(idx, requiredPunches()-1))} registrada às ${time}.`, 'ok');
 }
 function labelForIndex(i){ return model()?.punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'][i] : ['Entrada','Saída almoço','Volta almoço','Saída'][i]; }
@@ -697,8 +702,7 @@ async function logoutGoogle(){
   }catch(err){
     console.warn('Falha ao desconectar Google:', err);
   }
-  state.user = null;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  state=freshState();
   tab = 'home';
   render();
 }
@@ -986,8 +990,8 @@ function applyEspelhoImport(parsed){
   (parsed.rows||[]).forEach(r=>{
     const dd = day(r.date);
     const punches = adaptedPunchesForModel(r.punches);
-    if(punches.length){ dd.punches = punches.map(t=>({time:t, source:'pdf_espelho'})); dd.absenceType = null; }
-    if(r.closed) dd.closed = true;
+    if(punches.length)state.days[r.date]=PontoSync.replacePunches(dd,punches.map(time=>({time,source:'pdf_espelho'})));
+    if(r.closed)state.days[r.date].closed=true;
     if(r.note) dd.note = [dd.note, r.note].filter(Boolean).join(' · ');
   });
   if(parsed.summary?.saldoAtual !== null && parsed.summary?.saldoAtual !== undefined){
@@ -1238,10 +1242,8 @@ function previewCommonSpreadsheetImport(parsed){
 function applyCommonSpreadsheetImport(parsed){
   parsed.rows.forEach(r => {
     const d = day(r.date);
-    d.punches = r.punches.map((time, index) => ({ time, source:'spreadsheet_common', slot:index, createdAt:new Date().toISOString() }));
-    d.absenceType = null;
-    d.closed = false;
-    d.note = d.note || '';
+    state.days[r.date]=PontoSync.replacePunches(d,r.punches.map(time=>({time,source:'spreadsheet_common'})));
+    state.days[r.date].note=state.days[r.date].note||'';
   });
   save();
 }
@@ -1274,10 +1276,10 @@ function renderRegister(){
     draw();
     saveReg.onclick = () => {
       const dd = day(regDate.value);
-      dd.absenceType = null;
-      dd.closed = false;
-      dd.punches = [...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean).map(t=>({time:t,source:'typed'}));
-      dd.note = note.value;
+      const values=[...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean);
+      try{state.days[regDate.value]=PontoSync.replacePunches(dd,values.map(time=>({time,source:'typed'})));}
+      catch(err){showToast(err.message,'warn');return;}
+      state.days[regDate.value].note=note.value;
       save();
       showToast('Marcações manuais salvas.', 'ok');
       tab='home';
@@ -1686,8 +1688,10 @@ function renderProfileScreen(){
 
   document.getElementById('reset').onclick = () => {
     if(confirm('Limpar todos os dados locais?')){
-      localStorage.removeItem(STORAGE_KEY);
-      state = load();
+      const uid=state.user?.uid;
+      if(uid)localStorage.removeItem(storageKey(uid));
+      const signedUser=state.user;
+      state=freshState();state.user=signedUser;
       tab = 'home';
       render();
     }
