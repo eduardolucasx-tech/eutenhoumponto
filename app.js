@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.8.3';
+const APP_VERSION = 'v1.8.4';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -933,7 +933,7 @@ function renderHome(){
     const phase=i===0?'tf-entry':i===labels.length-1?'tf-exit':i===1?'tf-break':'tf-return';
     const status=registered?'Registrado':inProgress?'Próximo passo':'Aguardando';
     return `<li class="tf-timeline-step ${phase} ${registered?'done':inProgress?'current':''}">
-      <span class="tf-timeline-dot">${registered?'✓':pad(i+1)}</span>
+      <span class="tf-timeline-dot">${registered?'OK':pad(i+1)}</span>
       <div class="tf-timeline-info">
         <div><div class="tf-timeline-name">${label}</div><span class="tf-timeline-sub">${status}</span></div>
         <time class="tf-timeline-time">${registered?displayPunchTime(punches,i):'--:--'}</time>
@@ -950,7 +950,7 @@ function renderHome(){
     ?fmtMin(priorImpact.saldo)+' (estimado)'
     :complete(yd)?fmtMin(priorImpact.saldo):'Sem registro';
   const undoButton=punches.length
-    ? '<button class="secondary" id="undoLastBtn" type="button">↶ Corrigir última batida</button>':'';
+    ? '<button class="secondary" id="undoLastBtn" type="button">Corrigir última batida</button>':'';
   const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
   const kind=date!==iso(n)?'Jornada anterior em andamento':'Jornada de hoje';
   const warning=overdue?`<div class="tf-alert" role="alert">
@@ -978,7 +978,7 @@ function renderHome(){
         <div class="tf-stage-bottom">
           <div class="tf-stage-action">
             <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>
-              <span>${nextLabel}</span><span class="arrow" aria-hidden="true">↗</span>
+              <span>${nextLabel}</span><span class="arrow" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></span>
             </button>
             <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
             ${undoButton}
@@ -1013,7 +1013,7 @@ function renderHome(){
       <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
     </section>
     <section class="tf-history-strip" aria-label="Dia anterior">
-      <div><p class="tf-eyebrow">OLHANDO PARA ONTEM</p><strong>${brDate(priorId)} · ${priorPunches.length?`${displayPunchTime(priorPunches,0)} → ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'Sem batidas registradas'}</strong></div>
+      <div><p class="tf-eyebrow">OLHANDO PARA ONTEM</p><strong>${brDate(priorId)} · ${priorPunches.length?`${displayPunchTime(priorPunches,0)} até ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'Sem batidas registradas'}</strong></div>
       <div class="tf-history-value">SALDO <b>${priorBalance}</b></div>
     </section>
   </div>`;
@@ -1205,7 +1205,7 @@ function previewEspelhoImport(parsed){
   const feriados = rows.filter(r=>r.note && /Paixão|Tiradentes/.test(r.note)).length;
   const sample = rows.slice(0,10).map(r=>{
     const p = adaptedPunchesForModel(r.punches);
-    const line = p.length ? `${p[0]} → ${p[p.length-1]}` : (r.note || 'sem batidas');
+    const line = p.length ? `${p[0]} até ${p[p.length-1]}` : (r.note || 'sem batidas');
     return `<div class="day-item clickable-day" data-day="${r.date}"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><span>${p.length ? `${p.length} bat.` : ''}</span></div><div class="day-sub">${line}</div></div>`;
   }).join('');
   const extraTotal = (parsed.summary.extraNormal||0) + (parsed.summary.extraNoturna||0);
@@ -1542,7 +1542,7 @@ function renderRegister(){
           <div class="tf-reg-notes"><label for="note">Observação do dia</label>
             <textarea id="note" rows="3" placeholder="Opcional: ajuste, justificativa ou informação relevante">${escapeHtml(d.note||'')}</textarea></div>
           <div class="tf-reg-footer">
-            <button class="primary" id="saveReg" type="button">Salvar marcações <span aria-hidden="true">↗</span></button>
+            <button class="primary" id="saveReg" type="button">Salvar marcações <span aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></span></button>
             <button class="secondary" id="undoRegBtn" type="button">Corrigir última batida</button>
           </div>
         </section>
@@ -1621,7 +1621,7 @@ function renderRegister(){
     const body = document.getElementById('registerBody');
     body.innerHTML = `
     <section class="card import-subnav-card"><div class="segmented register-tabs import-tabs" id="importSegment"><button class="${importSubView==='receipt'?'active':''}" data-import="receipt">Comprovante</button><button class="${importSubView==='sheet'?'active':''}" data-import="sheet">Planilha</button><button class="${importSubView==='mirror'?'active':''}" data-import="mirror">Espelho</button></div></section>
-    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">↑</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
+    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">ARQ</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
     <section class="card hidden" id="foundBox"></section></div>
 
     <div class="import-group ${importSubView==='sheet'?'':'hidden'}" data-import-group="sheet"><section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 02/02/2026\t07:31:00\t13:33:00\t14:33:00\t17:57:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
@@ -1916,7 +1916,7 @@ function renderMonth(){
     const short = r.provisionalSaturday
       ? (p.length?'Sábado com batidas incompletas · débito estimado':'Sábado sem batidas · débito estimado')
       : objForShort.absenceType ? absenceLabel(objForShort.absenceType)
-      : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
+      : (p.length ? `${displayPunchTime(p,0)} até ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
     const waiting=r.pending&&!r.future&&!r.provisionalSaturday;
     return `<div class="day-item ${r.future?'future-day':'clickable-day'}" ${r.future?'':`data-day="${r.date}"`}>
       <div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>
