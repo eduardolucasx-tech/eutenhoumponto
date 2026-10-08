@@ -284,7 +284,18 @@ function startPreview(){
       state.days[iso(today)]={date:iso(today),punches:[{time:`${pad(Math.floor(start/60))}:${pad(start%60)}`,source:'preview_example'}],note:'Exemplo da demonstração'};
     }
   }
-  tab='home';
+  if(new URLSearchParams(window.location.search).get('saturday')==='1'){
+    // Demonstração isolada: exibe o último sábado passado SEM batidas,
+    // para conferir −04:00 estimados no calendário, sem acesso ao Firebase.
+    state.profile={...state.profile,model:'tribuna_hub_prog',city:'Santos',demoData:true};
+    const saturday=new Date(nowSP());
+    const daysBack=((saturday.getDay()+1)%7)||7;
+    saturday.setDate(saturday.getDate()-daysBack);
+    const saturdayId=iso(saturday);
+    delete state.days[saturdayId];
+    selectedMonthValue=saturdayId.slice(0,7);
+    tab='month';
+  }else tab='home';
   persistLocal();
   render();
 }
