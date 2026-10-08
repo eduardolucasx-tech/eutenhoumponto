@@ -253,6 +253,25 @@ function startPreview(){
   cloudLastError='';
   state=load(PREVIEW_UID);
   state.user=previewUser();
+  if(!state.profile){
+    state.profile={model:'tribuna_hub_prog',city:'Santos',bankStart:0,scaleStartDate:null,demoData:true,createdAt:new Date().toISOString()};
+    const today=nowSP();
+    for(let offset=1;offset<=5;offset++){
+      const date=new Date(today);date.setDate(today.getDate()-offset);
+      const id=iso(date);
+      if(expectedMinutes(id)>0){
+        state.days[id]={date:id,punches:[
+          {time:'09:04',source:'preview_example'},
+          {time:offset%2===0?'18:22':'18:12',source:'preview_example'}
+        ],note:'Exemplo da demonstração',closed:true};
+      }
+    }
+    const minutes=today.getHours()*60+today.getMinutes();
+    if(expectedMinutes(iso(today))>0 && minutes>150){
+      const start=minutes-115;
+      state.days[iso(today)]={date:iso(today),punches:[{time:`${pad(Math.floor(start/60))}:${pad(start%60)}`,source:'preview_example'}],note:'Exemplo da demonstração'};
+    }
+  }
   tab='home';
   persistLocal();
   render();
@@ -829,7 +848,7 @@ function renderHome(){
     </div>`:'';
   screenEl.innerHTML=`<div class="tf-home">
     <header class="tf-intro">
-      <div><p class="tf-eyebrow">${dayLabel.toUpperCase()}</p>
+      <div><p class="tf-eyebrow">${dayLabel.toUpperCase()} ${previewMode?'· DADOS SIMULADOS':''}</p>
         <h2>Seu tempo,<br><span>sob controle.</span></h2>
       </div>
       <div class="tf-sync-line"><span class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</span></div>
