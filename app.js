@@ -355,6 +355,7 @@ function grossMinutesForExpected(net){
   return net > 345 ? net + 60 : net + 15;
 }
 function homeStatusLine(dayObj){
+  if(dayObj?.absenceType)return `${absenceLabel(dayObj.absenceType)} registrada`;
   const p = punchesOf(dayObj);
   const exp = expectedMinutes(dayObj.date);
   if(model()?.punchMode === 'autoLunch'){
@@ -431,7 +432,7 @@ function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
-  if(isPending(dayObj)) return { text:'Marcação pendente', cls:'warn' };
+  if(isPending(dayObj))return {text:(dayObj.punches||[]).length?'Batidas incompletas':'Sem registro',cls:'warn'};
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj, partial);
   const saldo = w - exp;
@@ -633,7 +634,7 @@ function exportMonthCsv(year, month){
     const p = r.punches || [];
     const origem = [...new Set(p.map(x=>x.source||'manual'))].join(', ');
     const note = state.days[r.date]?.note || '';
-    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), fmtMin(r.saldo), r.status.text, origem, note];
+    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), r.pending?'':fmtMin(r.saldo), r.status.text, origem, note];
     lines.push(vals.map(escapeCsv).join(';'));
   });
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
@@ -642,7 +643,7 @@ function exportMonthExcel(year, month){
   const st = monthStats(year,month);
   const rows = st.rows.map(r=>{
     const p = r.punches || [];
-    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${state.days[r.date]?.note||''}</td></tr>`;
+    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${state.days[r.date]?.note||''}</td></tr>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Eu tenho um ponto. - ${monthNames[month]} ${year}</h1><table border="1"><tr><th>Previsto até hoje</th><th>Trabalhado</th><th>Saldo mês</th><th>Banco do ciclo</th><th>Marcações pendentes</th></tr><tr><td>${fmtMin(st.prev)}</td><td>${fmtMin(st.trab)}</td><td>${fmtMin(st.saldo)}</td><td>${fmtMin(st.cycleTotal)}</td><td>${st.pend}</td></tr></table><br><table border="1"><tr><th>Data</th><th>Dia</th><th>Modelo</th><th>Entrada</th><th>Saída almoço</th><th>Volta almoço</th><th>Saída</th><th>Trabalhado</th><th>Previsto</th><th>Saldo</th><th>Status</th><th>Observação</th></tr>${rows}</table></body></html>`;
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.xls`, html, 'application/vnd.ms-excel;charset=utf-8');
@@ -651,7 +652,7 @@ function reportText(year, month){
   const st = monthStats(year,month);
   return `Relatório - Eu tenho um ponto.\n${monthNames[month]} de ${year}\nModelo: ${model().title}\nCiclo: ${st.cycle.label}\n\nPrevisto até hoje: ${fmtMin(st.prev)}\nTrabalhado: ${fmtMin(st.trab)}\nSaldo do mês ${st.officialMonth ? '(oficial)' : '(estimado)'}: ${fmtMin(st.saldo)}\nDébito do mês: ${fmtMin(st.monthDebit)}
 Crédito do mês: ${fmtMin(st.monthCredit)}
-Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nMarcações pendentes: ${st.pend}\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
+Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nPendências: ${st.pend} (sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial})\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
 }
 function addPunch(date, time, source='manual'){
   const d = day(date);
@@ -824,7 +825,8 @@ function renderHome(){
   const d=day(date);
   const worked=workedMinutes(d,true);
   const expected=expectedMinutes(date);
-  const saldo=worked-expected;
+  const saldo=estimatedBankImpact(d).saldo;
+  const saldoApurado=complete(d);
   const jornada=jornadaStatus(d,true);
   const stamp=dateObj(date);
   const punches=punchesOf(d);
@@ -910,7 +912,7 @@ function renderHome(){
     <section class="tf-metric-ribbon" aria-label="Indicadores de hoje">
       <div class="tf-metric"><span>Previsto</span><strong>${fmtMin(expected)}</strong><small>Jornada contratual</small></div>
       <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong><small>Tempo computado</small></div>
-      <div class="tf-metric"><span>Saldo parcial</span><strong class="${saldo>=0?'good':'bad'}">${fmtMin(saldo)}</strong><small>Estimativa do dia</small></div>
+      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>=0?'good':'bad'):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?'Dia apurado':'Batidas ou justificativa pendentes'}</small></div>
       <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
     </section>
     <section class="tf-history-strip" aria-label="Dia anterior">
@@ -1640,7 +1642,7 @@ function diagnosticRowForDay(date){
     date,
     expected: exp,
     worked,
-    saldo: impact.saldo,
+    saldo: isPending(d)?null:impact.saldo,
     status: status.text,
     cls: status.cls,
     punches: punchesOf(d).map(p => p.time).join(' / ') || '--',
@@ -1702,7 +1704,7 @@ function renderMonthDiagnostic(year, month){
     <div class="diagnostic-grid">
       <span>Esperado <b>${fmtMin(r.expected)}</b></span>
       <span>Trabalhado <b>${fmtMin(r.worked)}</b></span>
-      <span>Saldo <b class="${r.saldo<0?'danger':'ok'}">${fmtMin(r.saldo)}</b></span>
+      <span>Saldo <b class="${r.saldo===null?'':r.saldo<0?'danger':'ok'}">${r.saldo===null?'--:--':fmtMin(r.saldo)}</b></span>
       <span>Fonte <b>${r.source}</b></span>
     </div>
     <div class="diagnostic-status ${r.cls}">${r.status}</div>
@@ -1721,31 +1723,42 @@ function renderMonth(){
   const st = monthStats(year, month);
   const annualStats = annualBankStats(year);
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
-  const saldoFonteLongo = st.officialMonth ? 'Baseado no espelho oficial importado.' : 'Baseado apenas nas batidas e regras do app.';
+  const saldoFonteLongo=st.officialMonth
+    ? 'Saldo mensal obtido do espelho oficial importado.'
+    : 'Estimativa de dias apurados, ausências registradas e dados oficiais; dias pendentes não são descontados.';
   const rowsHtml = st.rows.map(r=>{
     const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
     const objForShort = state.days[r.date] || {date:r.date,punches:r.punches||[]};
     const short = objForShort.absenceType ? absenceLabel(objForShort.absenceType) : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
-    return `<div class="day-item ${r.future ? 'future-day' : 'clickable-day'}" ${r.future ? '' : `data-day="${r.date}"`}><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><div style="display:flex;gap:8px;align-items:center">${(!r.future && isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]})) ? '<span class="alert">!</span>' : ''}<span class="bal ${r.future ? '' : (r.saldo<0?'neg':r.saldo>0?'pos':'')}">${r.future ? '--:--' : fmtMin(r.saldo)}</span></div></div><div class="day-sub">${r.future ? 'Dia futuro' : short}</div></div>`;
+    const waiting=r.pending&&!r.future;
+    return `<div class="day-item ${r.future?'future-day':'clickable-day'}" ${r.future?'':`data-day="${r.date}"`}>
+      <div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${waiting?'<span class="alert" title="Pendente de conferência">!</span>':''}
+        <span class="bal ${r.future||waiting?'':r.saldo<0?'neg':r.saldo>0?'pos':''}">
+          ${r.future||waiting?'--:--':fmtMin(r.saldo)}</span></div></div>
+      <div class="day-sub">${r.future?'Dia futuro':short}</div></div>`;
   }).join('');
   const bankBody = st.officialBank ?
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
   const monthMap = st.rows.map(r=>{
     const typ=r.future?'future'
-      :r.expected===0 && !(r.punches||[]).length?'off'
+      :r.absenceType==='atestado'?'medical'
+      :r.absenceType==='banco'?'bank'
+      :r.absenceType==='falta'?'absence'
+      :r.expected===0&&!(r.punches||[]).length?'off'
       :!(r.punches||[]).length?'empty'
-      :isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]})?'incomplete'
-      :r.saldo<0?'negative'
-      :'positive';
+      :r.pending?'incomplete'
+      :r.saldo<0?'negative':'positive';
     const future=r.future;
     return '<button type="button" class="tf-day-pixel tf-'+typ+(future?'':' clickable-day')+'"'
       +(future?' disabled':' data-day="'+r.date+'"')
-      +' title="'+brDate(r.date)+' | '+(future?'Dia futuro':fmtMin(r.saldo))+'">'
+      +' title="'+brDate(r.date)+' | '+(future?'Dia futuro':r.absenceType?absenceLabel(r.absenceType):r.pending?'Pendente, saldo não apurado':fmtMin(r.saldo))+'">'
       +'<span class="tf-day-number">'+Number(r.date.slice(-2))+'</span>'
       +'<span class="tf-day-mark" aria-hidden="true"></span></button>';
   }).join('');
-  const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
+  const emptyMonth=!st.rows.some(r=>r.done||(r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
   <div class="tf-section-intro">
@@ -1759,14 +1772,16 @@ function renderMonth(){
     <div class="tf-month-legend">
       <span><i class="legend-good"></i> Positivo</span>
       <span><i class="legend-bad"></i> Negativo</span>
-      <span><i class="legend-pending"></i> Incompleto</span>
-      <span><i class="legend-empty"></i> Sem batidas</span>
+      <span><i class="legend-pending"></i> Incompleto / Atestado</span>
+      <span><i class="legend-bank"></i> Folga banco</span>
+      <span><i class="legend-absence"></i> Falta</span>
+      <span><i class="legend-empty"></i> Sem registro</span>
       <span><i class="legend-off"></i> Folga / feriado</span>
     </div>
   </section>
-  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
+  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Dias a conferir</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo} Sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial}.</p></section>
   ${isTraditionalModel()
-    ? `<section class="card tf-bank-summary"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
+    ? `<section class="card tf-bank-summary"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: somente dias apurados e ausências registradas; pendências não viram horas negativas.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
     : `<section class="card tf-bank-summary"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
   ${renderMonthDrawer('records', 'Registro mensal', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml, `${st.rows.length} dia${st.rows.length===1?'':'s'}`)}
   ${renderMonthDiagnostic(year, month)}
