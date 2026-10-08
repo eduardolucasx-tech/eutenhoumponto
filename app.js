@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.8.2';
+const APP_VERSION = 'v1.8.3';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -65,6 +65,8 @@ var cloudHydrating = false;
 var cloudSyncTimer = null;
 var cloudLastError = '';
 var cloudLastSyncAt = null;
+var cloudHistoryStats = null;
+var cloudLoadedForUid = null;
 
 function hasRealFirebaseConfig(){
   const cfg = window.FIREBASE_CONFIG || {};
@@ -99,11 +101,14 @@ async function initFirebaseAuth(){
           provider: "firebase_google"
         };
         persistLocal();
-        await hydrateFromCloud('smart');
-        if(state.user?.uid===user.uid)await pushStateToCloud(true);
+        // Primeiro recuperar a matriz original da conta. Não sobrescrever a nuvem
+        // apenas pelo ato de entrar: dados antigos podem existir em outros meses.
+        await hydrateFromCloud('cloud');
         render();
       } else {
-        cloudReady = false;
+        cloudReady=false;
+        cloudLoadedForUid=null;
+        cloudHistoryStats=null;
       }
     });
 
@@ -137,28 +142,35 @@ function countDayEntries(days){
 
 function mergeDay(localDay,cloudDay){return PontoSync.mergeDay(localDay,cloudDay,localDay?.date||cloudDay?.date);}
 function mergeDays(localDays={},cloudDays={}){return PontoSync.mergeDays(localDays,cloudDays);}
-function mergeCloudWithLocal(cloud, mode='smart'){
-  const local = stateForCloud();
-  const cloudDays = cloud.days || {};
-  const localDays = local.days || {};
-
-  // Não dependemos do relógio do celular/PC para decidir o que é mais novo.
-  // O merge combina os dias e une batidas pelo horário.
-  const days = typeof mergeDays === 'function'
-    ? mergeDays(localDays, cloudDays)
-    : { ...cloudDays, ...localDays };
-
-  const profile = local.profile || cloud.profile || null;
-  const imports = Array.isArray(local.imports) && local.imports.length ? local.imports : (cloud.imports || []);
-  const officialBank = { ...(cloud.officialBank || {}), ...(local.officialBank || {}) };
-
-  return {
-    profile,
-    days,
-    imports,
-    officialBank,
-    clientModifiedAt: new Date().toISOString()
-  };
+function mergeCloudWithLocal(cloud,mode='cloud'){
+  const local=stateForCloud();
+  const cloudDays=cloud?.days&&typeof cloud.days==='object'?cloud.days:{};
+  const localDays=local.days||{};
+  // A chave de cada dia é YYYY-MM-DD: união preserva registros de TODOS os meses,
+  // e PontoSync evita ressuscitar batidas removidas.
+  const days=mergeDays(localDays,cloudDays);
+  const cloudProfile=cloud?.profile&&MODELS[cloud.profile.model]?cloud.profile:null;
+  // Login: configurações da nuvem prevalecem (incluindo escala 12x2/cidade).
+  // Salvamento explícito: configurações que o usuário acaba de editar prevalecem.
+  const profile=mode==='push'
+    ? (local.profile||cloudProfile)
+    : (cloudProfile||local.profile);
+  const imports=[];
+  const seen=new Set();
+  for(const entry of [...(Array.isArray(cloud.imports)?cloud.imports:[]),
+                     ...(Array.isArray(local.imports)?local.imports:[])]){
+    const key=JSON.stringify(entry);
+    if(!seen.has(key)){seen.add(key);imports.push(entry);}
+  }
+  const officialBank=mode==='push'
+    ? {...(cloud.officialBank||{}),...(local.officialBank||{})}
+    : {...(local.officialBank||{}),...(cloud.officialBank||{})};
+  return {profile,days,imports,officialBank,clientModifiedAt:new Date().toISOString()};
+}
+function cloudHistorySummary(cloud){
+  const dates=Object.keys(cloud?.days||{}).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k));
+  return {days:dates.length,months:new Set(dates.map(k=>k.slice(0,7))).size,
+    officialMonths:Object.keys(cloud?.officialBank||{}).length};
 }
 
 function renderFallback(message='Não consegui carregar esta tela.'){
@@ -272,7 +284,18 @@ function startPreview(){
       state.days[iso(today)]={date:iso(today),punches:[{time:`${pad(Math.floor(start/60))}:${pad(start%60)}`,source:'preview_example'}],note:'Exemplo da demonstração'};
     }
   }
-  tab='home';
+  if(new URLSearchParams(window.location.search).get('saturday')==='1'){
+    // Demonstração isolada: exibe o último sábado passado SEM batidas,
+    // para conferir −04:00 estimados no calendário, sem acesso ao Firebase.
+    state.profile={...state.profile,model:'tribuna_hub_prog',city:'Santos',demoData:true};
+    const saturday=new Date(nowSP());
+    const daysBack=((saturday.getDay()+1)%7)||7;
+    saturday.setDate(saturday.getDate()-daysBack);
+    const saturdayId=iso(saturday);
+    delete state.days[saturdayId];
+    selectedMonthValue=saturdayId.slice(0,7);
+    tab='month';
+  }else tab='home';
   persistLocal();
   render();
 }
@@ -428,10 +451,33 @@ function isPending(dayObj){
   if(expectedMinutes(dayObj.date)<=0)return false;
   return (dayObj.punches||[]).length<requiredPunches();
 }
+// Matriz original Hub/Programação: sábado PASSADO sem batidas completas
+// tem -4h PROJETADAS, e não um desconto oficial já confirmado.
+function saturdayProjectionScope(date){
+  // Não inventar dívida retroativa em meses históricos inteiramente vazios.
+  const month=date.slice(0,7);
+  if(month===iso(nowSP()).slice(0,7))return true;
+  return Object.entries(state.days||{}).some(([id,entry])=>
+    id.slice(0,7)===month&&entry&&(
+      (entry.punches||[]).length>0||Boolean(entry.absenceType)||
+      Boolean(entry.official)||Boolean(entry.closed)
+    )
+  );
+}
+function pendingSaturdayDebit(dayObj){
+  if(!dayObj?.date||state.profile?.model!=='tribuna_hub_prog')return 0;
+  const d=dateObj(dayObj.date);
+  if(Number.isNaN(d.getTime())||d.getDay()!==6)return 0;
+  if(dayObj.date>=iso(nowSP()))return 0;
+  if(expectedMinutes(dayObj.date)!==240||!isPending(dayObj))return 0;
+  if(!saturdayProjectionScope(dayObj.date))return 0;
+  return 240;
+}
 function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
+  if(pendingSaturdayDebit(dayObj))return {text:'Sábado · -04:00 a conferir',cls:'warn'};
   if(isPending(dayObj))return {text:(dayObj.punches||[]).length?'Batidas incompletas':'Sem registro',cls:'warn'};
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj, partial);
@@ -492,7 +538,12 @@ function estimatedBankImpact(dayObj){
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
   // Falta de informação não é falta ao trabalho. Aguarda conferência.
-  if(isPending(dayObj))return {debit:0,credit:0,saldo:0,source:'pending_unconfirmed'};
+  if(isPending(dayObj)){
+    const provision=pendingSaturdayDebit(dayObj);
+    return provision
+      ? {debit:provision,credit:0,saldo:-provision,source:'saturday_provisional'}
+      : {debit:0,credit:0,saldo:0,source:'pending_unconfirmed'};
+  }
   const saldo = w - exp;
   return { debit: Math.max(0, -saldo), credit: Math.max(0, saldo), saldo, source:'estimated' };
 }
@@ -549,7 +600,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
   for(let d=new Date(after); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
+    if(complete(obj)||pendingSaturdayDebit(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -563,14 +614,15 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
+    if(complete(obj)||pendingSaturdayDebit(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
 function monthStats(year, month){
   const now = nowSP();
   const first = new Date(year, month, 1); const last = new Date(year, month+1, 0);
-  let prev=0,trab=0,saldoConfirmado=0,pend=0,semRegistro=0,parcial=0,cravada=0,superior=0,incompleta=0;
+  let prev=0,trab=0,saldoConfirmado=0,saldoProvisionadoSabados=0,
+    sabadosPendentes=0,pend=0,semRegistro=0,parcial=0,cravada=0,superior=0,incompleta=0;
   let debitEstimated=0, creditEstimated=0;
   const rows=[], issues=[];
   for(let d=new Date(first); d<=last; d.setDate(d.getDate()+1)){
@@ -582,16 +634,23 @@ function monthStats(year, month){
       if(pending){pend++;if(count===0)semRegistro++;else parcial++;}
     }
     const impact=estimatedBankImpact(obj);
+    const provisionalSaturday=isPastOrToday&&Boolean(pendingSaturdayDebit(obj));
     if(done&&isPastOrToday){
       saldoConfirmado+=impact.saldo;
       debitEstimated+=impact.debit;
       creditEstimated+=impact.credit;
+    }else if(provisionalSaturday){
+      saldoProvisionadoSabados+=impact.saldo;
+      sabadosPendentes++;
+      debitEstimated+=impact.debit;
     }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);
     const dup = punches.some((p,i)=>i>0 && p.time===punches[i-1].time);
-    if(isPastOrToday&&pending)issues.push(`${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
+    if(isPastOrToday&&pending)issues.push(provisionalSaturday
+      ? `${brDate(id)}: sábado de 4h pendente, -04:00 projetados no banco até conferência`
+      : `${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
     if(obj.absenceType&&dayOfficialImpact(obj))issues.push(`${brDate(id)}: ausência manual com valores oficiais diários; confira a divergência`);
     if(dup) issues.push(`${brDate(id)}: marcação duplicada`);
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
@@ -600,7 +659,8 @@ function monthStats(year, month){
     rows.push({date:id,weekday:weekShort[d.getDay()].toUpperCase(),punches,
       expected:exp,worked:w,saldo:displayImpact.saldo,bankImpact:displayImpact,status:displayStatus,
       holiday:isHoliday(id,state.profile.city),absenceType:obj.absenceType||null,
-      pending:isPastOrToday&&pending,pastOrToday:isPastOrToday,future:!isPastOrToday,done});
+      pending:isPastOrToday&&pending,provisionalSaturday,
+      pastOrToday:isPastOrToday,future:!isPastOrToday,done});
   }
   const cycle = bankCycleFor(`${year}-${pad(month+1)}-01`);
   const officialBank = findLatestOfficialBank(cycle, year, month);
@@ -609,11 +669,12 @@ function monthStats(year, month){
   const cycleSaldo = officialBank ? localAfterOfficial : cycleConfirmedSaldo(cycle, year, month);
   const cycleBase = officialBank ? officialBank.saldoAtual : (Number(state.profile.bankStart)||0);
   const cycleTotal = cycleBase + cycleSaldo;
-  const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado;
+  const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado+saldoProvisionadoSabados;
   const monthDebit = officialMonth ? officialMonth.debit : debitEstimated;
   const monthCredit = officialMonth ? officialMonth.credit : creditEstimated;
-  return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado,debitEstimated,creditEstimated,
-    monthDebit,monthCredit,officialMonth,saldoConfirmado,cycleSaldo,cycleTotal,cycleBase,officialBank,
+  return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado+saldoProvisionadoSabados,
+    saldoConfirmado,saldoProvisionadoSabados,sabadosPendentes,debitEstimated,creditEstimated,
+    monthDebit,monthCredit,officialMonth,cycleSaldo,cycleTotal,cycleBase,officialBank,
     pend,semRegistro,parcial,cravada,superior,incompleta,rows,issues,cycle};
 }
 function escapeCsv(v){
@@ -637,7 +698,7 @@ function exportMonthCsv(year, month){
     const p = r.punches || [];
     const origem = [...new Set(p.map(x=>x.source||'manual'))].join(', ');
     const note = state.days[r.date]?.note || '';
-    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), r.pending||r.future?'':fmtMin(r.saldo), r.status.text, origem, note];
+    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), (r.pending&&!r.provisionalSaturday)||r.future?'':fmtMin(r.saldo), r.provisionalSaturday?'Sábado -4h estimados; pendente':r.status.text, origem, note];
     lines.push(vals.map(escapeCsv).join(';'));
   });
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
@@ -646,7 +707,7 @@ function exportMonthExcel(year, month){
   const st = monthStats(year,month);
   const rows = st.rows.map(r=>{
     const p = r.punches || [];
-    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending||r.future?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${escapeHtml(state.days[r.date]?.note||'')}</td></tr>`;
+    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${(r.pending&&!r.provisionalSaturday)||r.future?'':fmtMin(r.saldo)}</td><td>${r.provisionalSaturday?'Sábado -4h estimados; pendente':r.status.text}</td><td>${escapeHtml(state.days[r.date]?.note||'')}</td></tr>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Eu tenho um ponto. - ${monthNames[month]} ${year}</h1><table border="1"><tr><th>Previsto até hoje</th><th>Trabalhado</th><th>Saldo mês</th><th>Banco do ciclo</th><th>Marcações pendentes</th></tr><tr><td>${fmtMin(st.prev)}</td><td>${fmtMin(st.trab)}</td><td>${fmtMin(st.saldo)}</td><td>${fmtMin(st.cycleTotal)}</td><td>${st.pend}</td></tr></table><br><table border="1"><tr><th>Data</th><th>Dia</th><th>Modelo</th><th>Entrada</th><th>Saída almoço</th><th>Volta almoço</th><th>Saída</th><th>Trabalhado</th><th>Previsto</th><th>Saldo</th><th>Status</th><th>Observação</th></tr>${rows}</table></body></html>`;
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.xls`, html, 'application/vnd.ms-excel;charset=utf-8');
@@ -655,7 +716,7 @@ function reportText(year, month){
   const st = monthStats(year,month);
   return `Relatório - Eu tenho um ponto.\n${monthNames[month]} de ${year}\nModelo: ${model().title}\nCiclo: ${st.cycle.label}\n\nPrevisto até hoje: ${fmtMin(st.prev)}\nTrabalhado: ${fmtMin(st.trab)}\nSaldo do mês ${st.officialMonth ? '(oficial)' : '(estimado)'}: ${fmtMin(st.saldo)}\nDébito do mês: ${fmtMin(st.monthDebit)}
 Crédito do mês: ${fmtMin(st.monthCredit)}
-Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nPendências: ${st.pend} (sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial})\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
+Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nPendências: ${st.pend} (sábados com -04:00 estimados: ${st.sabadosPendentes}; sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial})\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
 }
 function addPunch(date,time,source='manual'){
   const d=day(date);
@@ -884,7 +945,10 @@ function renderHome(){
   const priorId=iso(prior);
   const yd=state.days[priorId]||{date:priorId,punches:[]};
   const priorPunches=punchesOf(yd);
-  const priorBalance=priorPunches.length?fmtMin(workedMinutes(yd)-expectedMinutes(priorId)):'Sem registro';
+  const priorImpact=estimatedBankImpact(yd);
+  const priorBalance=pendingSaturdayDebit(yd)
+    ?fmtMin(priorImpact.saldo)+' (estimado)'
+    :complete(yd)?fmtMin(priorImpact.saldo):'Sem registro';
   const undoButton=punches.length
     ? '<button class="secondary" id="undoLastBtn" type="button">↶ Corrigir última batida</button>':'';
   const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
@@ -1439,33 +1503,118 @@ function renderRegister(){
   <div id="registerBody" class="register-body"></div>`;
 
   const renderManual = () => {
-    const d = state.days[date] || { punches:[], note:'' };
-    const body = document.getElementById('registerBody');
-    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${escapeHtml(d.note||'')}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco</button><button class="secondary" id="medicalDayBtn">Atestado</button><button class="secondary danger-text" id="faultDayBtn">Falta</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
-    const draw = () => {
-      const dd = state.days[regDate.value] || {punches:[]};
-      regFields.innerHTML = manualFields.map((f,i)=>`<div class="time-field"><label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}" placeholder="HH:MM"></div>`).join('');
-      note.value = dd.note || '';
+    const body=document.getElementById('registerBody');
+    const activeDate=selectedRegisterDate||iso(nowSP());
+    const d=state.days[activeDate]||{date:activeDate,punches:[],note:''};
+    const scheduled=expectedMinutes(activeDate);
+    const isTribuna=model()?.punchMode==='autoLunch';
+    const legacyModel=['tribuna_hub_prog','tribuna_jornalismo'].includes(state.profile?.model);
+    const city=legacyModel?'Santos':(state.profile?.city||model()?.city||'Santos');
+    const holiday=isHoliday(activeDate,city);
+    const weekdayName=weekFull[dateObj(activeDate).getDay()];
+    const absence=d.absenceType?absenceLabel(d.absenceType):'Nenhuma';
+    const dayDescription=holiday?'Feriado previsto no calendário original'
+      :scheduled===0?'Dia sem jornada prevista'
+      :scheduled===240?'Jornada prevista de 4 horas'
+      :'Jornada prevista de '+fmtMin(scheduled);
+    const cloudSummary=previewMode?'Demonstração local, sem conexão à nuvem'
+      :cloudHistoryStats?'Histórico da nuvem: '+cloudHistoryStats.days+' dias em '+cloudHistoryStats.months+' meses'
+      :cloudReady?'Conta conectada. Histórico conciliado.':'Aguardando confirmação da nuvem';
+    body.innerHTML=`
+      <div class="tf-reg-layout">
+        <section class="card tf-reg-editor" aria-labelledby="registerEditorTitle">
+          <div class="tf-reg-heading">
+            <div><span class="tf-reg-eyebrow">01 / LANÇAMENTO</span>
+              <h2 id="registerEditorTitle">Suas marcações</h2>
+              <p class="muted">Apenas as batidas do dia escolhido serão alteradas.</p></div>
+            <span class="tf-reg-mode">${isTribuna?'02 BATIDAS':'04 BATIDAS'}</span>
+          </div>
+          <div class="tf-reg-date-card">
+            <label for="regDate">Data da jornada</label>
+            <input id="regDate" type="date" class="input" value="${activeDate}">
+            <div class="tf-reg-date-context"><span>${weekdayName}</span><strong>${dayDescription}</strong></div>
+          </div>
+          <div class="tf-reg-blockhead">
+            <div><span class="tf-reg-eyebrow">02 / HORÁRIOS</span><h3>Batidas do expediente</h3></div>
+            <span>${(d.punches||[]).length} registradas</span>
+          </div>
+          <div id="regFields" class="tf-reg-times"></div>
+          <div class="tf-reg-notes"><label for="note">Observação do dia</label>
+            <textarea id="note" rows="3" placeholder="Opcional: ajuste, justificativa ou informação relevante">${escapeHtml(d.note||'')}</textarea></div>
+          <div class="tf-reg-footer">
+            <button class="primary" id="saveReg" type="button">Salvar marcações <span aria-hidden="true">↗</span></button>
+            <button class="secondary" id="undoRegBtn" type="button">Corrigir última batida</button>
+          </div>
+        </section>
+        <aside class="tf-reg-sidebar" aria-label="Contexto e justificativas do dia">
+          <section class="card tf-reg-context">
+            <span class="tf-reg-eyebrow">MATRIZ ORIGINAL</span>
+            <h3>${escapeHtml(model().title)}</h3>
+            <dl class="tf-reg-facts">
+              <div><dt>Calendário</dt><dd>${escapeHtml(city)}</dd></div>
+              <div><dt>Carga prevista</dt><dd>${fmtMin(scheduled)}</dd></div>
+              <div><dt>Almoço</dt><dd>${isTribuna?'Automático, pela regra original':'Informado nas quatro batidas'}</dd></div>
+              <div><dt>Justificativa atual</dt><dd>${escapeHtml(absence)}</dd></div>
+            </dl>
+            <p class="tf-reg-note">${legacyModel?'A matriz Tribuna/Santos e a configuração da escala original são mantidas.':'Jornada conforme modelo salvo no seu perfil.'}</p>
+            <p class="tf-reg-cloud">${escapeHtml(cloudSummary)}</p>
+          </section>
+          <section class="card tf-reg-leave">
+            <span class="tf-reg-eyebrow">03 / OCORRÊNCIAS</span>
+            <h3>Justificar o dia</h3>
+            <p class="muted">Folga Banco e Falta usam a carga prevista. Atestado não gera débito.</p>
+            <div class="tf-reg-leave-actions">
+              <button class="secondary tf-reg-bank" id="bankDayBtn" type="button">Folga Banco</button>
+              <button class="secondary tf-reg-medical" id="medicalDayBtn" type="button">Atestado</button>
+              <button class="secondary tf-reg-fault" id="faultDayBtn" type="button">Falta</button>
+            </div>
+            <button class="secondary tf-reg-clear" id="clearAbsenceBtn" type="button">Remover justificativa</button>
+          </section>
+        </aside>
+      </div>`;
+    const dateEl=document.getElementById('regDate');
+    const fieldEl=document.getElementById('regFields');
+    const noteEl=document.getElementById('note');
+    const draw=()=>{
+      const selected=dateEl.value||activeDate;
+      const record=state.days[selected]||{date:selected,punches:[],note:''};
+      const items=manualFields.map((name,i)=>{
+        const kind=i===0?'entry':i===manualFields.length-1?'exit':i===1?'break':'return';
+        return `<label class="tf-reg-time tf-reg-time-${kind}">
+          <span class="tf-reg-time-index">${pad(i+1)}</span>
+          <span class="tf-reg-time-name">${name}</span>
+          <input type="time" class="input punchInput" aria-label="${name}" value="${record.punches?.[i]?.time||''}" step="60">
+        </label>`;
+      });
+      fieldEl.innerHTML=items.join('');
+      noteEl.value=record.note||'';
     };
-    regDate.onchange = draw;
+    dateEl.onchange=()=>{
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dateEl.value))return;
+      selectedRegisterDate=dateEl.value;
+      renderRegister();
+    };
     draw();
-    saveReg.onclick = () => {
-      const dd=day(regDate.value);
-      if(dd.absenceType&&!confirm('Substituir '+absenceLabel(dd.absenceType)+' por batidas manuais? A ausência deixará de contar no saldo.'))return;
-      const values=[...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean);
-      try{state.days[regDate.value]=PontoSync.replacePunches(dd,values.map(time=>({time,source:'typed'})));}
-      catch(err){showToast(err.message,'warn');return;}
-      state.days[regDate.value].note=note.value;
+    document.getElementById('saveReg').onclick=()=>{
+      const selected=dateEl.value;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){showToast('Escolha uma data válida.','warn');return;}
+      const original=state.days[selected]||{date:selected,punches:[],note:''};
+      if(original.absenceType&&!confirm('Substituir '+absenceLabel(original.absenceType)+' por batidas manuais? A ocorrência deixará de contar no saldo.'))return;
+      const values=[...document.querySelectorAll('.punchInput')].map(input=>input.value).filter(Boolean);
+      try{
+        const updated=PontoSync.replacePunches(original,values.map(time=>({time,source:'typed'})));
+        updated.note=noteEl.value;
+        state.days[selected]=updated;
+      }catch(err){showToast(err.message,'warn');return;}
+      selectedRegisterDate=selected;
       save();
-      showToast('Marcações manuais salvas.', 'ok');
-      tab='home';
-      render();
+      showToast('Marcações de '+brDate(selected)+' salvas.','ok');
     };
-    undoRegBtn.onclick = () => undoLastPunch(regDate.value);
-    if(bankDayBtn) bankDayBtn.onclick = () => setDayAbsence(regDate.value, 'banco');
-    if(medicalDayBtn) medicalDayBtn.onclick = () => setDayAbsence(regDate.value, 'atestado');
-    if(faultDayBtn) faultDayBtn.onclick = () => setDayAbsence(regDate.value, 'falta');
-    if(clearAbsenceBtn) clearAbsenceBtn.onclick = () => clearDayAbsence(regDate.value);
+    document.getElementById('undoRegBtn').onclick=()=>undoLastPunch(dateEl.value);
+    document.getElementById('bankDayBtn').onclick=()=>setDayAbsence(dateEl.value,'banco');
+    document.getElementById('medicalDayBtn').onclick=()=>setDayAbsence(dateEl.value,'atestado');
+    document.getElementById('faultDayBtn').onclick=()=>setDayAbsence(dateEl.value,'falta');
+    document.getElementById('clearAbsenceBtn').onclick=()=>clearDayAbsence(dateEl.value);
   };
 
   const renderImportView = () => {
@@ -1671,12 +1820,13 @@ function diagnosticRowForDay(date){
     : (d.punches || []).some(p => p.source === 'typed') ? 'Manual'
     : (d.punches || []).some(p => p.source === 'button') ? 'Botão'
     : d.absenceType ? absenceLabel(d.absenceType)
+    : pendingSaturdayDebit(d)?'Matriz Hub: sábado estimado'
     : 'Sem fonte';
   return {
     date,
     expected: exp,
     worked,
-    saldo: isPending(d)?null:impact.saldo,
+    saldo: isPending(d)&&!pendingSaturdayDebit(d)?null:impact.saldo,
     status: status.text,
     cls: status.cls,
     punches: punchesOf(d).map(p => p.time).join(' / ') || '--',
@@ -1759,28 +1909,41 @@ function renderMonth(){
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
   const saldoFonteLongo=st.officialMonth
     ? 'Saldo mensal obtido do espelho oficial importado.'
-    : 'Estimativa de dias apurados, ausências registradas e dados oficiais; dias pendentes não são descontados.';
+    : 'Estimativa de jornadas apuradas e ausências. Sábados passados do Hub sem batidas completas projetam −04:00 cada, ainda pendentes de conferência. Outros dias sem registro não geram débito.';
   const rowsHtml = st.rows.map(r=>{
     const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
     const objForShort = state.days[r.date] || {date:r.date,punches:r.punches||[]};
-    const short = objForShort.absenceType ? absenceLabel(objForShort.absenceType) : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
-    const waiting=r.pending&&!r.future;
+    const short = r.provisionalSaturday
+      ? (p.length?'Sábado com batidas incompletas · débito estimado':'Sábado sem batidas · débito estimado')
+      : objForShort.absenceType ? absenceLabel(objForShort.absenceType)
+      : (p.length ? `${displayPunchTime(p,0)} → ${displayPunchTime(p,p.length-1)}` : (r.holiday ? 'Feriado' : 'Sem registro'));
+    const waiting=r.pending&&!r.future&&!r.provisionalSaturday;
     return `<div class="day-item ${r.future?'future-day':'clickable-day'}" ${r.future?'':`data-day="${r.date}"`}>
       <div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>
       <div style="display:flex;gap:8px;align-items:center">
-        ${waiting?'<span class="alert" title="Pendente de conferência">!</span>':''}
+        ${(waiting||r.provisionalSaturday)?'<span class="alert" title="Pendente de conferência">!</span>':''}
         <span class="bal ${r.future||waiting?'':r.saldo<0?'neg':r.saldo>0?'pos':''}">
-          ${r.future||waiting?'--:--':fmtMin(r.saldo)}</span></div></div>
+          ${r.future||waiting?'--:--':fmtMin(r.saldo)}${r.provisionalSaturday?' *':''}</span></div></div>
       <div class="day-sub">${r.future?'Dia futuro':short}</div></div>`;
   }).join('');
   const bankBody = st.officialBank ?
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
+  const calendarOffset=(new Date(year,month,1).getDay()+6)%7;
+  const weekdayHeader=['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo'];
+  const weekdayLetters=['S','T','Q','Q','S','S','D'];
+  const calendarHeaders=weekdayLetters.map((letter,i)=>
+    '<span class="tf-calendar-weekday" title="'+weekdayHeader[i]+'" aria-label="'+weekdayHeader[i]+'">'+letter+'</span>'
+  ).join('');
+  const calendarLeading=Array.from({length:calendarOffset},()=>
+    '<span class="tf-calendar-pad" aria-hidden="true"></span>'
+  ).join('');
   const monthMap = st.rows.map(r=>{
     const typ=r.future?'future'
       :r.absenceType==='atestado'?'medical'
       :r.absenceType==='banco'?'bank'
       :r.absenceType==='falta'?'absence'
+      :r.provisionalSaturday?'saturday-provisional'
       :r.expected===0&&!(r.punches||[]).length?'off'
       :!(r.punches||[]).length?'empty'
       :r.pending?'incomplete'
@@ -1788,11 +1951,11 @@ function renderMonth(){
     const future=r.future;
     return '<button type="button" class="tf-day-pixel tf-'+typ+(future?'':' clickable-day')+'"'
       +(future?' disabled':' data-day="'+r.date+'"')
-      +' title="'+brDate(r.date)+' | '+(future?'Dia futuro':r.absenceType?absenceLabel(r.absenceType):r.pending?'Pendente, saldo não apurado':fmtMin(r.saldo))+'">'
+      +' title="'+brDate(r.date)+' | '+(future?'Dia futuro':r.absenceType?absenceLabel(r.absenceType):r.provisionalSaturday?'-04:00 estimados (pendente)':r.pending?'Pendente, saldo não apurado':fmtMin(r.saldo))+'">'
       +'<span class="tf-day-number">'+Number(r.date.slice(-2))+'</span>'
       +'<span class="tf-day-mark" aria-hidden="true"></span></button>';
   }).join('');
-  const emptyMonth=!st.rows.some(r=>r.done||(r.punches||[]).length);
+  const emptyMonth=!st.rows.some(r=>r.done||r.provisionalSaturday||(r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
   <div class="tf-section-intro">
@@ -1802,18 +1965,21 @@ function renderMonth(){
   </div>
   <section class="tf-month-map" aria-label="Mapa dos dias do mês">
     <div class="tf-map-heading"><h3>Mapa da jornada</h3><span>${monthNames[month]} / ${year}</span></div>
-    <div class="tf-month-heatmap">${monthMap}</div>
+    <div class="tf-month-heatmap" role="group" aria-label="Calendário de ${monthNames[month]} de ${year}, de segunda a domingo">
+      ${calendarHeaders}${calendarLeading}${monthMap}
+    </div>
     <div class="tf-month-legend">
       <span><i class="legend-good"></i> Positivo</span>
       <span><i class="legend-bad"></i> Negativo</span>
       <span><i class="legend-pending"></i> Incompleto / Atestado</span>
       <span><i class="legend-bank"></i> Folga banco</span>
       <span><i class="legend-absence"></i> Falta</span>
+      <span><i class="legend-saturday"></i> Sábado: −4h estimadas</span>
       <span><i class="legend-empty"></i> Sem registro</span>
       <span><i class="legend-off"></i> Folga / feriado</span>
     </div>
   </section>
-  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Dias a conferir</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo} Sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial}.</p></section>
+  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Dias a conferir</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo} Sábados com −04:00 estimados: ${st.sabadosPendentes}; dias sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial}.</p></section>
   ${isTraditionalModel()
     ? `<section class="card tf-bank-summary"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: somente dias apurados e ausências registradas; pendências não viram horas negativas.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
     : `<section class="card tf-bank-summary"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
@@ -1858,7 +2024,8 @@ function renderProfileScreen(){
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
   screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
-  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>${previewMode
+  <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>
+  ${!previewMode&&cloudHistoryStats?'<p class="muted">Histórico encontrado na nuvem: '+cloudHistoryStats.days+' dias distribuídos por '+cloudHistoryStats.months+' meses; '+cloudHistoryStats.officialMonths+' meses de banco oficial. Esses dados são conciliados com os registros locais.</p>':''}${previewMode
   ? '<p class="muted">Modo de demonstração. Não lê nem escreve no Firebase. Os dados são de teste.</p>'
   : `${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button>`}
   <button class="secondary full" id="disconnectGoogle">${previewMode?'Sair da demonstração':'Desconectar conta Google'}</button></section>
@@ -1995,18 +2162,35 @@ async function hydrateFromCloud(mode='smart'){
     const ref = await cloudDocRef();
     if(!ref) throw new Error('Referência Firestore não criada.');
 
-    const snap = await firestoreFns.getDoc(ref);
+    const uid=state.user.uid;
+    const snap=await firestoreFns.getDoc(ref);
     if(snap.exists()){
-      const merged = mergeCloudWithLocal(snap.data() || {}, mode);
-      state.profile = merged.profile || state.profile;
-      state.days = merged.days || {};
-      state.imports = merged.imports || [];
-      state.officialBank = merged.officialBank || {};
-      state.clientModifiedAt = merged.clientModifiedAt || state.clientModifiedAt;
+      const cloud=snap.data()||{};
+      // Cópia de segurança local do documento remoto ANTES da conciliação,
+      // com chave separada por UID. Falhas de quota não bloqueiam o login.
+      try{
+        const backupKey=STORAGE_KEY+':cloud-original:'+uid;
+        if(!localStorage.getItem(backupKey))
+          localStorage.setItem(backupKey,JSON.stringify({
+            savedAt:new Date().toISOString(),profile:cloud.profile||null,
+            days:cloud.days||{},imports:cloud.imports||[],
+            officialBank:cloud.officialBank||{}
+          }));
+      }catch(err){console.warn('Backup local da nuvem indisponível:',err);}
+      const merged=mergeCloudWithLocal(cloud,mode);
+      if(state.user?.uid!==uid)return false;
+      state.profile=merged.profile||state.profile;
+      state.days=merged.days||{};
+      state.imports=merged.imports||[];
+      state.officialBank=merged.officialBank||{};
+      state.clientModifiedAt=merged.clientModifiedAt||state.clientModifiedAt;
+      cloudHistoryStats=cloudHistorySummary(cloud);
       persistLocal();
+    }else{
+      cloudHistoryStats={days:0,months:0,officialMonths:0};
     }
-
-    cloudReady = true;
+    cloudLoadedForUid=uid;
+    cloudReady=true;
     cloudLastError = '';
     cloudLastSyncAt = new Date();
     return true;
@@ -2042,7 +2226,7 @@ async function pushStateToCloud(immediate=false){
       const uid=state.user.uid;
       const merged=await firestoreFns.runTransaction(firebaseDb,async tx=>{
         const snap=await tx.get(ref);
-        const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'smart'):stateForCloud();
+        const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'push'):stateForCloud();
         tx.set(ref,{...result,userMeta:{
           name:state.user?.name||'',email:state.user?.email||'',photoURL:state.user?.photoURL||''
         },updatedAt:firestoreFns.serverTimestamp()},{merge:true});

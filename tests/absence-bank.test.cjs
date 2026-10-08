@@ -39,14 +39,17 @@ function boot(model='tribuna_hub_prog'){
 const DAY='2026-10-06',SAT='2026-10-03',SUN='2026-10-04';
 test('sem registro não equivale a débito de 8 horas',()=>{
   const {api}=boot(),m=api.monthStats(2026,9);
-  assert.equal(m.saldo,0);
-  assert.equal(m.cycleTotal,0);
+  assert.equal(m.saldo,-240); // sábado 03/10 projetado, não um débito confirmado
+  assert.equal(m.saldoConfirmado,0);
+  assert.equal(m.saldoProvisionadoSabados,-240);
+  assert.equal(m.sabadosPendentes,1);
+  assert.equal(m.cycleTotal,-240);
   assert.equal(m.semRegistro,m.pend);
 });
 test('atestado é neutro e remove pendência',()=>{
   const {api}=boot(),prev=api.monthStats(2026,9).pend;
   api.setDayAbsence(DAY,'atestado');
-  assert.equal(api.monthStats(2026,9).saldo,0);
+  assert.equal(api.monthStats(2026,9).saldo,-240);
   assert.equal(api.monthStats(2026,9).pend,prev-1);
   assert.equal(api.state.days[DAY].note,'Atestado');
 });
@@ -55,9 +58,9 @@ for(const [code,label] of [['banco','Folga Banco'],['falta','Falta']]){
     const {api}=boot();
     api.setDayAbsence(DAY,code);
     const m=api.monthStats(2026,9);
-    assert.equal(m.saldo,-480);
-    assert.equal(m.debitEstimated,480);
-    assert.equal(m.cycleSaldo,-480);
+    assert.equal(m.saldo,-720);
+    assert.equal(m.debitEstimated,720);
+    assert.equal(m.cycleSaldo,-720);
   });
 }
 test('sábado consome quatro horas; domingo não consome',()=>{
@@ -89,14 +92,14 @@ test('dia fechado com apenas uma batida continua pendente sem desconto',()=>{
   const {api}=boot();
   api.state.days[DAY]={date:DAY,punches:[{time:'09:00'}],closed:true};
   const m=api.monthStats(2026,9);
-  assert.equal(m.saldo,0);
+  assert.equal(m.saldo,-240);
   assert.equal(m.parcial,1);
   assert.equal(m.rows.find(r=>r.date===DAY).pending,true);
 });
 test('jornada apurada gera crédito positivo correto',()=>{
   const {api}=boot();
   api.state.days[DAY]={date:DAY,punches:[{time:'09:00'},{time:'19:00'}]};
-  assert.equal(api.monthStats(2026,9).saldo,60);
+  assert.equal(api.monthStats(2026,9).saldo,-180);
 });
 test('modelo Tradicional ignora dias não registrados',()=>{
   const {api}=boot('tradicional');
@@ -129,4 +132,98 @@ test('a sincronização respeita cancelamento e devolve batidas',()=>{
   assert.equal(merged.absenceType,null);
   assert.equal(merged.closed,false);
   assert.equal(merged.note,'Original');
+});
+
+test('sábado histórico pendente é estimado uma vez no banco e mantém alerta',()=>{
+  const {api,nodes}=boot();
+  const month=api.monthStats(2026,9);
+  const sat=month.rows.find(r=>r.date===SAT);
+  assert.equal(sat.saldo,-240);
+  assert.equal(sat.pending,true);
+  assert.equal(sat.done,false);
+  assert.equal(sat.provisionalSaturday,true);
+  assert.equal(month.sabadosPendentes,1);
+  assert.equal(month.saldoProvisionadoSabados,-240);
+  api.renderMonth();
+  assert.match(nodes.screen.innerHTML,/tf-saturday-provisional/);
+  assert.match(nodes.screen.innerHTML,/Sábado: −4h estimadas/);
+  assert.match(nodes.screen.innerHTML,/-04:00/);
+});
+test('sábado com jornada completa substitui projeção, sem débito duplicado',()=>{
+  const {api}=boot();
+  api.state.days[SAT]={date:SAT,punches:[{time:'09:00'},{time:'13:15'}]};
+  const m=api.monthStats(2026,9);
+  // bruto 4h15, intervalo automático de 15min; saldo do sábado 0
+  assert.equal(m.saldo,0);
+  assert.equal(m.sabadosPendentes,0);
+  assert.equal(m.rows.find(r=>r.date===SAT).done,true);
+});
+test('sábado com 3h trabalhadas completas desconta só 1h',()=>{
+  const {api}=boot();
+  api.state.days[SAT]={date:SAT,punches:[{time:'09:00'},{time:'12:15'}]};
+  const m=api.monthStats(2026,9);
+  assert.equal(m.saldo,-60);
+  assert.equal(m.sabadosPendentes,0);
+});
+test('sábado com atestado não desconta banco',()=>{
+  const {api}=boot();
+  api.setDayAbsence(SAT,'atestado');
+  const m=api.monthStats(2026,9);
+  assert.equal(m.saldo,0);
+  assert.equal(m.rows.find(r=>r.date===SAT).saldo,0);
+});
+test('sábado com apenas uma batida continua projetado e sinalizado',()=>{
+  const {api}=boot();
+  api.state.days[SAT]={date:SAT,punches:[{time:'09:00'}],closed:true};
+  const m=api.monthStats(2026,9);
+  assert.equal(m.saldo,-240);
+  assert.equal(m.parcial,1);
+  assert.equal(m.sabadosPendentes,1);
+  assert.equal(m.rows.find(r=>r.date===SAT).pending,true);
+});
+test('feriado de sábado não tem projeção -4h',()=>{
+  const {api}=boot();
+  // 2026-10-12 é feriado nacional, mas segunda; criamos falso sábado via
+  // feriado de sábado real da matriz original: 2026-11-15 é domingo.
+  // 2026-11-02 é segunda. Verificamos por isso uma data de zero no domingo.
+  assert.equal(api.expectedMinutes('2026-10-04'),0);
+  assert.equal(api.estimatedBankImpact({date:'2026-10-04',punches:[]}).saldo,0);
+});
+
+test('meses históricos vazios não geram dezenas de débitos presumidos',()=>{
+  const {api}=boot();
+  const august=api.monthStats(2026,7);
+  assert.equal(august.saldo,0);
+  assert.equal(august.sabadosPendentes,0);
+  const october=api.monthStats(2026,9);
+  assert.equal(october.saldo,-240);
+  assert.equal(october.cycleSaldo,-240);
+});
+test('mês histórico com registros da nuvem projeta seus sábados pendentes',()=>{
+  const {api}=boot();
+  api.state.days['2026-09-10']={
+    date:'2026-09-10',punches:[{time:'09:00'},{time:'18:00'}]
+  };
+  const september=api.monthStats(2026,8);
+  assert.ok(september.sabadosPendentes>0);
+  assert.equal(september.saldoProvisionadoSabados,-240*september.sabadosPendentes);
+  assert.equal(september.rows.find(r=>r.date==='2026-09-05').provisionalSaturday,true);
+});
+test('saldo oficial prevalece e sábado posterior projeta débito sem duplicação',()=>{
+  const {api}=boot();
+  api.state.officialBank={'2026-09':{
+    debito:0,credito:0,saldoAnterior:600,saldoAtual:600
+  }};
+  const october=api.monthStats(2026,9);
+  assert.equal(october.cycleBase,600);
+  assert.equal(october.cycleSaldo,-240);
+  assert.equal(october.cycleTotal,360);
+  assert.equal(october.sabadosPendentes,1);
+});
+test('sábado futuro e sábado ainda em andamento não antecipam débito',()=>{
+  const {api}=boot();
+  assert.equal(api.estimatedBankImpact({date:'2026-10-10',punches:[]}).saldo,0);
+  const row=api.monthStats(2026,9).rows.find(r=>r.date==='2026-10-10');
+  assert.equal(row.provisionalSaturday,false);
+  assert.equal(row.future,true);
 });

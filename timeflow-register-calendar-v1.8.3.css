@@ -1,0 +1,124 @@
+/* Timeflow v1.8.3 | Calendar STQQSSD + register workspace */
+.tf-app .tf-month-heatmap {
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:9px;
+}
+.tf-app .tf-calendar-weekday{
+  display:flex;justify-content:center;align-items:center;min-height:36px;
+  color:var(--gold-light);font:750 12px "Manrope",sans-serif;
+  letter-spacing:.1em;background:rgba(223,191,120,.06);
+  border-radius:8px;border:1px solid rgba(223,191,120,.11);
+}
+.tf-app .tf-calendar-pad {min-width:0;pointer-events:none}
+.tf-app .tf-day-pixel{
+  min-height:66px;padding:10px 10px;border-radius:10px;
+}
+.tf-app .tf-day-number {font-size:13px}
+.tf-app .tf-day-mark {height:5px}
+.tf-app .tf-day-pixel.tf-empty {color:#a7a092}
+.tf-app .tf-day-pixel:focus-visible{outline:2px solid var(--gold-light);outline-offset:3px}
+.tf-app .tf-month-map{overflow:hidden}
+.tf-screen[data-view="register"] .register-body{max-width:none;width:100%;margin:0}
+.tf-screen[data-view="register"] .tf-reg-layout{
+  display:grid;grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr);
+  gap:16px;align-items:start;
+}
+.tf-app .tf-reg-layout .card {margin:0;padding:25px}
+.tf-app .tf-reg-editor{border-color:#544633}
+.tf-app .tf-reg-heading {display:flex;align-items:start;justify-content:space-between;gap:14px;margin-bottom:23px}
+.tf-app .tf-reg-heading h2{margin:5px 0 6px;font:800 clamp(22px,3vw,32px)/1.12 "Manrope",sans-serif;letter-spacing:-.055em}
+.tf-app .tf-reg-heading .muted{font-size:12px;margin:0;line-height:1.6}
+.tf-app .tf-reg-eyebrow{color:var(--gold-dark);font:800 10px "Manrope",sans-serif;letter-spacing:.16em}
+.tf-app .tf-reg-mode{
+  background:rgba(223,191,120,.095);color:var(--gold-light);
+  padding:8px 10px;border:1px solid rgba(223,191,120,.24);
+  border-radius:9px;white-space:nowrap;font:700 10px "DM Mono",monospace;
+}
+.tf-app .tf-reg-date-card{
+  border:1px solid #4e4235;background:#1f1e1e;
+  padding:17px;border-radius:14px;
+}
+.tf-app .tf-reg-date-card label{display:block;font-weight:700;color:#e9dbc1;margin-bottom:10px}
+.tf-app .tf-reg-date-card input{max-width:330px;width:100%;color-scheme:dark}
+.tf-app .tf-reg-date-context{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:12px}
+.tf-app .tf-reg-date-context span{color:var(--gold-light);text-transform:capitalize}
+.tf-app .tf-reg-date-context strong{color:#beb4a2;font-weight:600}
+.tf-app .tf-reg-blockhead{display:flex;justify-content:space-between;align-items:end;gap:9px;margin:25px 0 12px}
+.tf-app .tf-reg-blockhead h3{margin:3px 0 0;font:750 18px "Manrope",sans-serif}
+.tf-app .tf-reg-blockhead>span{font-size:11px;color:#9e9688}
+.tf-app .tf-reg-times{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.tf-app .tf-reg-time{
+ display:grid;grid-template-columns:27px minmax(0,1fr);
+ grid-template-rows:auto auto;align-items:center;gap:8px 7px;
+ border:1px solid #40382f;background:#222124;
+ border-radius:14px;padding:12px;margin:0;
+}
+.tf-app .tf-reg-time-index{
+ display:flex;align-items:center;justify-content:center;border-radius:8px;
+ background:rgba(223,191,120,.16);color:var(--gold-light);
+ font:700 12px "DM Mono",monospace;width:27px;height:27px;
+}
+.tf-app .tf-reg-time-name{color:#e6dac8;font-size:12px;font-weight:650}
+.tf-app .tf-reg-time input{grid-column:1/-1;width:100%;height:48px;font:700 19px "DM Mono",monospace}
+.tf-app .tf-reg-time-entry .tf-reg-time-index{background:rgba(96,209,160,.14);color:var(--semantic-green)}
+.tf-app .tf-reg-time-break .tf-reg-time-index,.tf-app .tf-reg-time-return .tf-reg-time-index{background:rgba(124,196,245,.13);color:var(--semantic-blue)}
+.tf-app .tf-reg-time-exit .tf-reg-time-index{background:rgba(239,133,133,.14);color:var(--semantic-red)}
+.tf-app .tf-reg-notes{margin-top:20px}
+.tf-app .tf-reg-notes label{display:block;margin-bottom:9px}
+.tf-app .tf-reg-notes textarea{width:100%;min-height:92px;resize:vertical}
+.tf-app .tf-reg-footer{display:flex;gap:10px;margin-top:19px}
+.tf-app .tf-reg-footer button{flex:1;min-height:49px;font-weight:700}
+.tf-app .tf-reg-footer button.primary{flex:1.4;display:flex;justify-content:center;align-items:center;gap:10px}
+.tf-app .tf-reg-sidebar{display:grid;gap:16px}
+.tf-app .tf-reg-sidebar h3{margin:6px 0 17px;font:750 19px "Manrope",sans-serif}
+.tf-app .tf-reg-facts{display:grid;gap:0;margin:0}
+.tf-app .tf-reg-facts div{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;padding:11px 0;border-top:1px solid #39332c}
+.tf-app .tf-reg-facts dt{font-size:11px;color:#a9a091}
+.tf-app .tf-reg-facts dd{font-size:11px;font-weight:700;color:#ece1d0;text-align:right;max-width:60%;margin:0}
+.tf-app .tf-reg-note,.tf-app .tf-reg-cloud{color:#afa597;font-size:11px;line-height:1.6;margin:12px 0 0}
+.tf-app .tf-reg-cloud{color:var(--semantic-green);border-top:1px solid #39332c;padding-top:10px}
+.tf-app .tf-reg-leave .muted{font-size:12px;line-height:1.6}
+.tf-app .tf-reg-leave-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.tf-app .tf-reg-leave-actions button{min-height:45px;padding:10px;font-size:12px}
+.tf-app .tf-reg-leave-actions .tf-reg-bank{color:var(--gold-light)}
+.tf-app .tf-reg-leave-actions .tf-reg-medical{color:var(--semantic-blue)}
+.tf-app .tf-reg-leave-actions .tf-reg-fault{color:var(--semantic-red);grid-column:1/-1}
+.tf-app .tf-reg-clear{width:100%;margin-top:11px;color:#bfb3a0;font-size:12px}
+@media(max-width:1000px){
+ .tf-screen[data-view="register"] .tf-reg-layout{grid-template-columns:minmax(0,1fr)}
+ .tf-app .tf-reg-sidebar{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+}
+@media(max-width:750px){
+ .tf-app .tf-month-heatmap{grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+ .tf-app .tf-calendar-weekday{min-height:29px;font-size:10px}
+ .tf-app .tf-day-pixel{min-height:53px;padding:8px 6px}
+ .tf-app .tf-day-number{font-size:12px}
+ .tf-app .tf-reg-layout .card{padding:18px}
+ .tf-app .tf-reg-times{gap:8px}
+ .tf-app .tf-reg-time{padding:10px}
+ .tf-app .tf-reg-sidebar{grid-template-columns:1fr}
+ .tf-app .tf-reg-heading{flex-wrap:wrap}
+ .tf-app .tf-reg-footer{flex-direction:column}
+ .tf-app .tf-reg-footer button{width:100%}
+}
+@media(max-width:350px){
+ .tf-app .tf-reg-times{grid-template-columns:1fr}
+ .tf-app .tf-day-pixel{min-height:47px;padding:6px 4px}
+ .tf-app .tf-calendar-weekday{font-size:9px}
+}
+
+/* 1.8.3 Saturday debit: estimated only, never confused with confirmed absence */
+.tf-app .tf-day-pixel.tf-saturday-provisional{
+  border-color:rgba(239,133,133,.38);
+  background:repeating-linear-gradient(135deg,rgba(239,133,133,.085) 0px,
+    rgba(239,133,133,.085) 5px,rgba(223,191,120,.045) 5px,
+    rgba(223,191,120,.045) 10px);
+}
+.tf-app .tf-day-pixel.tf-saturday-provisional .tf-day-mark{
+  background:linear-gradient(90deg,var(--semantic-red) 0 50%,var(--gold) 50% 100%);
+}
+.tf-app .tf-month-legend .legend-saturday{
+  background:linear-gradient(90deg,var(--semantic-red) 0 50%,var(--gold) 50% 100%);
+}
+.tf-app .day-item:has(.bal.neg) .bal.neg{font-variant-numeric:tabular-nums}
