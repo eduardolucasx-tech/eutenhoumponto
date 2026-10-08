@@ -1455,12 +1455,12 @@ function renderRegister(){
     const activeDate=selectedRegisterDate||iso(nowSP());
     const d=state.days[activeDate]||{date:activeDate,punches:[],note:''};
     const scheduled=expectedMinutes(activeDate);
-    const city=state.profile?.city||model()?.city||'Santos';
+    const isTribuna=model()?.punchMode==='autoLunch';
+    const legacyModel=['tribuna_hub_prog','tribuna_jornalismo'].includes(state.profile?.model);
+    const city=legacyModel?'Santos':(state.profile?.city||model()?.city||'Santos');
     const holiday=isHoliday(activeDate,city);
     const weekdayName=weekFull[dateObj(activeDate).getDay()];
     const absence=d.absenceType?absenceLabel(d.absenceType):'Nenhuma';
-    const isTribuna=model()?.punchMode==='autoLunch';
-    const legacyModel=['tribuna_hub_prog','tribuna_jornalismo'].includes(state.profile?.model);
     const dayDescription=holiday?'Feriado previsto no calendário original'
       :scheduled===0?'Dia sem jornada prevista'
       :scheduled===240?'Jornada prevista de 4 horas'
