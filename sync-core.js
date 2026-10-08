@@ -36,7 +36,7 @@
     });
     if(new Set(punches.map(p=>p.time)).size!==punches.length)throw Error('Existem batidas duplicadas.');
     return {...d,punches,deletedPunchIds:uniq([...d.deletedPunchIds,...available.map(p=>p.id)]),
-      absenceType:null,absenceRevision:d.absenceRevision+1,closed:false};
+      absenceType:null,absenceBackup:null,absenceRevision:d.absenceRevision+1,closed:false};
   }
   function addPunch(original,time,source='manual'){
     const d=normalizeDay(original,original?.date);
@@ -51,16 +51,37 @@
     return {removed,day:{...d,punches:d.punches.slice(0,-1),
       deletedPunchIds:uniq([...d.deletedPunchIds,removed.id])}};
   }
+  const absenceNames={banco:'Folga banco',atestado:'Atestado',falta:'Falta'};
   function setAbsence(original,type){
     const d=normalizeDay(original,original?.date);
     if(!d)throw Error('Dia não identificado.');
-    return {...d,punches:[],deletedPunchIds:uniq([...d.deletedPunchIds,...d.punches.map(p=>p.id)]),
-      absenceType:type,absenceRevision:d.absenceRevision+1,closed:true};
+    if(!Object.prototype.hasOwnProperty.call(absenceNames,type))throw Error('Ausência desconhecida.');
+    // A primeira alteração protege os dados existentes. Trocar o tipo mantém o backup original.
+    const backup=d.absenceType ? d.absenceBackup||null : {
+      punches:d.punches.map(p=>({...p})),
+      note:d.note||'',
+      closed:Boolean(d.closed)
+    };
+    const previousType=d.absenceType;
+    const generatedLabel=previousType&&d.note===absenceNames[previousType];
+    return {...d,punches:[],
+      deletedPunchIds:uniq([...d.deletedPunchIds,...d.punches.map(p=>p.id)]),
+      absenceBackup:backup,
+      absenceType:type,absenceRevision:d.absenceRevision+1,closed:true,
+      note:(!d.note||generatedLabel)?absenceNames[type]:d.note};
   }
   function clearAbsence(original){
     const d=normalizeDay(original,original?.date);
     if(!d)throw Error('Dia não identificado.');
-    return {...d,absenceType:null,absenceRevision:d.absenceRevision+1,closed:false};
+    if(!d.absenceType)return d;
+    const backup=d.absenceBackup;
+    // Novos IDs são essenciais: os IDs anteriores permanecem como tombstones na nuvem.
+    const punches=backup?.punches?array(backup.punches).map(p=>({...p,id:uid()})):[];
+    const autoLabel=d.note===absenceNames[d.absenceType];
+    return {...d,punches,
+      absenceBackup:null,absenceType:null,absenceRevision:d.absenceRevision+1,
+      closed:Boolean(backup?.closed),
+      note:autoLabel?(backup?.note||''):(d.note||'')};
   }
   function mergeDay(localValue,cloudValue,date){
     const l=normalizeDay(localValue,date),c=normalizeDay(cloudValue,date);
