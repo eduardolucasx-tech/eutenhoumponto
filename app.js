@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.8.1';
+const APP_VERSION = 'v1.8.2';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -825,6 +825,25 @@ function renderScaleSetup(){
   screenEl.innerHTML = `<section class="card"><h2>TRIBUNA JORNALISMO</h2><p class="muted">Informe a data inicial da escala 12x2. Ela deve ser o primeiro dia trabalhado do ciclo.</p><label>Data inicial da escala</label><input id="scaleStart" class="input" type="date" value="${iso(nowSP())}"><button class="primary" style="width:100%;margin-top:14px" id="saveScale">Salvar modelo</button></section>`;
   saveScale.onclick = () => { state.profile.scaleStartDate = scaleStart.value; save(); };
 }
+// Até 100%, o círculo dourado representa a meta; acima dela,
+// um anel verde externo acompanha o excedente, sem limitar o número exibido.
+function computeTimeProgress(worked,expected){
+  const done=Math.max(0,Number(worked)||0);
+  const target=Math.max(0,Number(expected)||0);
+  const extraMinutes=Math.max(0,done-target);
+  if(target===0)return {
+    percent:null,goalArc:0,extraArc:done>0?100:0,
+    overtime:done>0,extraMinutes:done,label:'SEM META'
+  };
+  const percent=Math.round((done/target)*100);
+  return {
+    percent,goalArc:Math.min(100,percent),
+    // O arco verde completa uma volta quando o excedente equivale à jornada prevista.
+    extraArc:Math.min(100,Math.round((extraMinutes/target)*100)),
+    overtime:extraMinutes>0,extraMinutes,
+    label:extraMinutes>0?'HORA EXTRA':'DO DIA'
+  };
+}
 function renderHome(){
   if(screenEl?.dataset)screenEl.dataset.view='home';
   const n=nowSP();
@@ -838,7 +857,7 @@ function renderHome(){
   const stamp=dateObj(date);
   const punches=punchesOf(d);
   const total=requiredPunches();
-  const progress=expected>0?Math.round(Math.max(0,Math.min(1,worked/expected))*100):0;
+  const progress=computeTimeProgress(worked,expected);
   const fullyMarked=punches.length>=total || Boolean(d.absenceType);
   const open=isOpenShift(d);
   const openMins=open?minutesSinceFirstPunch(date,d):0;
@@ -900,9 +919,16 @@ function renderHome(){
             <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
             ${undoButton}
           </div>
-          <div class="tf-progress" style="--progress:${progress}" role="img"
-             aria-label="${progress}% da carga horária prevista">
-            <div class="tf-progress-inner"><b>${progress}%</b><span>DO DIA</span></div>
+          <div class="tf-progress ${progress.overtime?'tf-progress-overtime':''}"
+            style="--progress:${progress.goalArc};--overtime-progress:${progress.extraArc}"
+            role="img"
+            aria-label="${progress.percent===null
+              ?'Sem carga prevista'+(progress.overtime?', '+fmtMin(progress.extraMinutes)+' trabalhadas':'')
+              :progress.percent+'% da jornada'+(progress.overtime?', '+fmtMin(progress.extraMinutes)+' de horas extras':'')}">
+            <div class="tf-progress-inner">
+              <b>${progress.percent===null?'--':progress.percent+'%'}</b>
+              <span>${progress.overtime?'+'+fmtMin(progress.extraMinutes):progress.label}</span>
+            </div>
           </div>
         </div>
       </section>
