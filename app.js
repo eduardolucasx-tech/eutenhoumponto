@@ -1,7 +1,11 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
 const APP_VERSION = 'v1.8.2';
 const PREVIEW_UID = '__local_preview_v161__';
-let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
+let previewMode = new URLSearchParams(window.location.search).get('demo') === '1'
+  || window.location.protocol === 'file:'
+  // A versão GitHub Pages abre sem Firebase por padrão até autorização do domínio.
+  || (window.location.hostname === 'eduardolucasx-tech.github.io'
+    && new URLSearchParams(window.location.search).get('login') !== '1');
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
 const nowSP = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 const pad = n => String(n).padStart(2,'0');
