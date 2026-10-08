@@ -1788,6 +1788,15 @@ function renderMonth(){
   const bankBody = st.officialBank ?
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
+  const calendarOffset=(new Date(year,month,1).getDay()+6)%7;
+  const weekdayHeader=['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo'];
+  const weekdayLetters=['S','T','Q','Q','S','S','D'];
+  const calendarHeaders=weekdayLetters.map((letter,i)=>
+    '<span class="tf-calendar-weekday" title="'+weekdayHeader[i]+'" aria-label="'+weekdayHeader[i]+'">'+letter+'</span>'
+  ).join('');
+  const calendarLeading=Array.from({length:calendarOffset},()=>
+    '<span class="tf-calendar-pad" aria-hidden="true"></span>'
+  ).join('');
   const monthMap = st.rows.map(r=>{
     const typ=r.future?'future'
       :r.absenceType==='atestado'?'medical'
@@ -1814,7 +1823,9 @@ function renderMonth(){
   </div>
   <section class="tf-month-map" aria-label="Mapa dos dias do mês">
     <div class="tf-map-heading"><h3>Mapa da jornada</h3><span>${monthNames[month]} / ${year}</span></div>
-    <div class="tf-month-heatmap">${monthMap}</div>
+    <div class="tf-month-heatmap" role="group" aria-label="Calendário de ${monthNames[month]} de ${year}, de segunda a domingo">
+      ${calendarHeaders}${calendarLeading}${monthMap}
+    </div>
     <div class="tf-month-legend">
       <span><i class="legend-good"></i> Positivo</span>
       <span><i class="legend-bad"></i> Negativo</span>
