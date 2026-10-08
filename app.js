@@ -442,12 +442,24 @@ function isPending(dayObj){
 }
 // Matriz original Hub/Programação: sábado PASSADO sem batidas completas
 // tem -4h PROJETADAS, e não um desconto oficial já confirmado.
+function saturdayProjectionScope(date){
+  // Não inventar dívida retroativa em meses históricos inteiramente vazios.
+  const month=date.slice(0,7);
+  if(month===iso(nowSP()).slice(0,7))return true;
+  return Object.entries(state.days||{}).some(([id,entry])=>
+    id.slice(0,7)===month&&entry&&(
+      (entry.punches||[]).length>0||Boolean(entry.absenceType)||
+      Boolean(entry.official)||Boolean(entry.closed)
+    )
+  );
+}
 function pendingSaturdayDebit(dayObj){
   if(!dayObj?.date||state.profile?.model!=='tribuna_hub_prog')return 0;
   const d=dateObj(dayObj.date);
   if(Number.isNaN(d.getTime())||d.getDay()!==6)return 0;
   if(dayObj.date>=iso(nowSP()))return 0;
   if(expectedMinutes(dayObj.date)!==240||!isPending(dayObj))return 0;
+  if(!saturdayProjectionScope(dayObj.date))return 0;
   return 240;
 }
 function jornadaStatus(dayObj, partial=false){
