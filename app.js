@@ -440,10 +440,21 @@ function isPending(dayObj){
   if(expectedMinutes(dayObj.date)<=0)return false;
   return (dayObj.punches||[]).length<requiredPunches();
 }
+// Matriz original Hub/Programação: sábado PASSADO sem batidas completas
+// tem -4h PROJETADAS, e não um desconto oficial já confirmado.
+function pendingSaturdayDebit(dayObj){
+  if(!dayObj?.date||state.profile?.model!=='tribuna_hub_prog')return 0;
+  const d=dateObj(dayObj.date);
+  if(Number.isNaN(d.getTime())||d.getDay()!==6)return 0;
+  if(dayObj.date>=iso(nowSP()))return 0;
+  if(expectedMinutes(dayObj.date)!==240||!isPending(dayObj))return 0;
+  return 240;
+}
 function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
+  if(pendingSaturdayDebit(dayObj))return {text:'Sábado · -04:00 a conferir',cls:'warn'};
   if(isPending(dayObj))return {text:(dayObj.punches||[]).length?'Batidas incompletas':'Sem registro',cls:'warn'};
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj, partial);
@@ -504,7 +515,12 @@ function estimatedBankImpact(dayObj){
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
   // Falta de informação não é falta ao trabalho. Aguarda conferência.
-  if(isPending(dayObj))return {debit:0,credit:0,saldo:0,source:'pending_unconfirmed'};
+  if(isPending(dayObj)){
+    const provision=pendingSaturdayDebit(dayObj);
+    return provision
+      ? {debit:provision,credit:0,saldo:-provision,source:'saturday_provisional'}
+      : {debit:0,credit:0,saldo:0,source:'pending_unconfirmed'};
+  }
   const saldo = w - exp;
   return { debit: Math.max(0, -saldo), credit: Math.max(0, saldo), saldo, source:'estimated' };
 }
@@ -561,7 +577,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
   for(let d=new Date(after); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
+    if(complete(obj)||pendingSaturdayDebit(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -575,14 +591,15 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
+    if(complete(obj)||pendingSaturdayDebit(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
 function monthStats(year, month){
   const now = nowSP();
   const first = new Date(year, month, 1); const last = new Date(year, month+1, 0);
-  let prev=0,trab=0,saldoConfirmado=0,pend=0,semRegistro=0,parcial=0,cravada=0,superior=0,incompleta=0;
+  let prev=0,trab=0,saldoConfirmado=0,saldoProvisionadoSabados=0,
+    sabadosPendentes=0,pend=0,semRegistro=0,parcial=0,cravada=0,superior=0,incompleta=0;
   let debitEstimated=0, creditEstimated=0;
   const rows=[], issues=[];
   for(let d=new Date(first); d<=last; d.setDate(d.getDate()+1)){
@@ -594,16 +611,23 @@ function monthStats(year, month){
       if(pending){pend++;if(count===0)semRegistro++;else parcial++;}
     }
     const impact=estimatedBankImpact(obj);
+    const provisionalSaturday=isPastOrToday&&Boolean(pendingSaturdayDebit(obj));
     if(done&&isPastOrToday){
       saldoConfirmado+=impact.saldo;
       debitEstimated+=impact.debit;
       creditEstimated+=impact.credit;
+    }else if(provisionalSaturday){
+      saldoProvisionadoSabados+=impact.saldo;
+      sabadosPendentes++;
+      debitEstimated+=impact.debit;
     }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);
     const dup = punches.some((p,i)=>i>0 && p.time===punches[i-1].time);
-    if(isPastOrToday&&pending)issues.push(`${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
+    if(isPastOrToday&&pending)issues.push(provisionalSaturday
+      ? `${brDate(id)}: sábado de 4h pendente, -04:00 projetados no banco até conferência`
+      : `${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
     if(obj.absenceType&&dayOfficialImpact(obj))issues.push(`${brDate(id)}: ausência manual com valores oficiais diários; confira a divergência`);
     if(dup) issues.push(`${brDate(id)}: marcação duplicada`);
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
@@ -612,7 +636,8 @@ function monthStats(year, month){
     rows.push({date:id,weekday:weekShort[d.getDay()].toUpperCase(),punches,
       expected:exp,worked:w,saldo:displayImpact.saldo,bankImpact:displayImpact,status:displayStatus,
       holiday:isHoliday(id,state.profile.city),absenceType:obj.absenceType||null,
-      pending:isPastOrToday&&pending,pastOrToday:isPastOrToday,future:!isPastOrToday,done});
+      pending:isPastOrToday&&pending,provisionalSaturday,
+      pastOrToday:isPastOrToday,future:!isPastOrToday,done});
   }
   const cycle = bankCycleFor(`${year}-${pad(month+1)}-01`);
   const officialBank = findLatestOfficialBank(cycle, year, month);
@@ -621,11 +646,12 @@ function monthStats(year, month){
   const cycleSaldo = officialBank ? localAfterOfficial : cycleConfirmedSaldo(cycle, year, month);
   const cycleBase = officialBank ? officialBank.saldoAtual : (Number(state.profile.bankStart)||0);
   const cycleTotal = cycleBase + cycleSaldo;
-  const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado;
+  const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado+saldoProvisionadoSabados;
   const monthDebit = officialMonth ? officialMonth.debit : debitEstimated;
   const monthCredit = officialMonth ? officialMonth.credit : creditEstimated;
-  return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado,debitEstimated,creditEstimated,
-    monthDebit,monthCredit,officialMonth,saldoConfirmado,cycleSaldo,cycleTotal,cycleBase,officialBank,
+  return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado+saldoProvisionadoSabados,
+    saldoConfirmado,saldoProvisionadoSabados,sabadosPendentes,debitEstimated,creditEstimated,
+    monthDebit,monthCredit,officialMonth,cycleSaldo,cycleTotal,cycleBase,officialBank,
     pend,semRegistro,parcial,cravada,superior,incompleta,rows,issues,cycle};
 }
 function escapeCsv(v){
@@ -1856,7 +1882,7 @@ function renderMonth(){
   const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
   const saldoFonteLongo=st.officialMonth
     ? 'Saldo mensal obtido do espelho oficial importado.'
-    : 'Estimativa de dias apurados, ausências registradas e dados oficiais; dias pendentes não são descontados.';
+    : 'Estimativa de jornadas apuradas e ausências. Sábados passados do Hub sem batidas completas projetam −04:00 cada, ainda pendentes de conferência. Outros dias sem registro não geram débito.';
   const rowsHtml = st.rows.map(r=>{
     const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
     const objForShort = state.days[r.date] || {date:r.date,punches:r.punches||[]};
