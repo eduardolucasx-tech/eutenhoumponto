@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.6.1-preview';
+const APP_VERSION = 'v1.7.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -678,6 +678,7 @@ function goProfile(){
 function render(){
   try{
     const currentTab = tab || 'home';
+    if(screenEl?.dataset)screenEl.dataset.view=currentTab;
     document.querySelectorAll('.bottom-nav button').forEach((button) => {
       const btnTab = button.dataset.tab;
       button.classList.toggle('active', btnTab === currentTab || ((btnTab === 'config' || btnTab === 'profile') && (currentTab === 'config' || currentTab === 'profile')));
@@ -781,48 +782,111 @@ function renderScaleSetup(){
   saveScale.onclick = () => { state.profile.scaleStartDate = scaleStart.value; save(); };
 }
 function renderHome(){
-  const n = nowSP(), date = activeWorkDate(), d = day(date), worked = workedMinutes(d, true), exp = expectedMinutes(date), saldo = worked-exp, st = jornadaStatus(d, true);
-  const baseDate = dateObj(date);
-  const isOpen = isOpenShift(d);
-  const openMins = isOpen ? minutesSinceFirstPunch(date, d) : 0;
-  const overdue = isOpen && openMins >= 18*60;
-  const yesterday = new Date(baseDate); yesterday.setDate(baseDate.getDate()-1); const yIso = iso(yesterday); const yd = state.days[yIso] || {date:yIso,punches:[]};
-  const activeLabel = date !== iso(n) ? 'Jornada em andamento' : 'Hoje';
-  const protection = overdue ? `<section class="card warning-card"><h2 class="section-title">Jornada aberta</h2><p>Existe uma jornada aberta há ${fmtMin(openMins)}. Confira antes de continuar.</p><div class="actions"><button class="secondary" id="finishOpenBtn">Concluir agora</button><button class="secondary danger-text" id="undoOpenBtn">Limpar última batida</button></div></section>` : '';
-  const undoButton = (d.punches||[]).length ? `<button class="secondary full" id="undoLastBtn">Limpar última batida</button>` : '';
-  const ySaldo = workedMinutes(yd)-expectedMinutes(yIso);
-  const ySummary = yd.punches?.length
-    ? `<div class="history-mini"><span>${displayPunchTime(yd.punches,0)} → ${displayPunchTime(yd.punches, yd.punches.length-1)}</span><strong class="${ySaldo<0?'danger':'ok'}">${fmtMin(ySaldo)}</strong></div>`
-    : `<div class="empty-state compact">Nenhuma marcação registrada no dia anterior.</div>`;
-  screenEl.innerHTML = `
-  <section class="card home-profile slim">
-    <div class="hello">
-      <small>Olá, ${escapeHtml(userFirstName())}</small>
-      <strong>Vamos registrar seu ponto?</strong>
-      <p class="tagline">${model().title}</p>
+  const n=nowSP();
+  const date=activeWorkDate();
+  const d=day(date);
+  const worked=workedMinutes(d,true);
+  const expected=expectedMinutes(date);
+  const saldo=worked-expected;
+  const jornada=jornadaStatus(d,true);
+  const stamp=dateObj(date);
+  const punches=punchesOf(d);
+  const total=requiredPunches();
+  const progress=expected>0?Math.round(Math.max(0,Math.min(1,worked/expected))*100):0;
+  const fullyMarked=punches.length>=total || Boolean(d.absenceType);
+  const open=isOpenShift(d);
+  const openMins=open?minutesSinceFirstPunch(date,d):0;
+  const overdue=open && openMins>=18*60;
+  const labels=model()?.punchMode==='autoLunch'
+    ? ['Entrada','Saída']
+    : ['Entrada','Intervalo','Retorno','Saída'];
+  const nextLabel=fullyMarked?'Jornada registrada':punches.length===0?'Registrar entrada':`Registrar ${labels[Math.min(punches.length,labels.length-1)].toLowerCase()}`;
+  const timeline=labels.map((label,i)=>{
+    const registered=!!punches[i];
+    const inProgress=!registered && i===punches.length;
+    const status=registered?'Registrado':inProgress?'Próximo passo':'Aguardando';
+    return `<li class="tf-timeline-step ${registered?'done':inProgress?'current':''}">
+      <span class="tf-timeline-dot">${registered?'✓':pad(i+1)}</span>
+      <div class="tf-timeline-info">
+        <div><div class="tf-timeline-name">${label}</div><span class="tf-timeline-sub">${status}</span></div>
+        <time class="tf-timeline-time">${registered?displayPunchTime(punches,i):'--:--'}</time>
+      </div>
+    </li>`;
+  }).join('');
+  const prior=new Date(stamp);
+  prior.setDate(prior.getDate()-1);
+  const priorId=iso(prior);
+  const yd=state.days[priorId]||{date:priorId,punches:[]};
+  const priorPunches=punchesOf(yd);
+  const priorBalance=priorPunches.length?fmtMin(workedMinutes(yd)-expectedMinutes(priorId)):'Sem registro';
+  const undoButton=punches.length
+    ? '<button class="secondary" id="undoLastBtn" type="button">↶ Corrigir última batida</button>':'';
+  const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
+  const kind=date!==iso(n)?'Jornada anterior em andamento':'Jornada de hoje';
+  const warning=overdue?`<div class="tf-alert" role="alert">
+      <div><strong>Atenção: jornada aberta há ${fmtMin(openMins)}</strong><p>Revise os horários antes de continuar.</p></div>
+      <button class="secondary" id="finishOpenBtn">Concluir agora</button>
+    </div>`:'';
+  screenEl.innerHTML=`<div class="tf-home">
+    <header class="tf-intro">
+      <div><p class="tf-eyebrow">${dayLabel.toUpperCase()}</p>
+        <h2>Seu tempo,<br><span>sob controle.</span></h2>
+      </div>
+      <div class="tf-sync-line"><span class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</span></div>
+    </header>
+    ${warning}
+    <div class="tf-stage-grid">
+      <section class="tf-stage" aria-labelledby="stageTitle">
+        <div class="tf-stage-top">
+          <span class="tf-stage-label" id="stageTitle">${kind.toUpperCase()}</span>
+          <span class="tf-stage-index">01 / PRESENTE</span>
+        </div>
+        <div class="tf-datetime">
+          <div class="tf-bigclock" id="clockNow">${hm(n)}</div>
+          <div class="tf-now-caption">${fullyMarked?'Todas as marcações registradas':open?'Jornada em andamento':'Pronto para começar'}</div>
+        </div>
+        <div class="tf-stage-bottom">
+          <div class="tf-stage-action">
+            <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>
+              <span>${nextLabel}</span><span class="arrow" aria-hidden="true">↗</span>
+            </button>
+            <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
+            ${undoButton}
+          </div>
+          <div class="tf-progress" style="--progress:${progress}" role="img"
+             aria-label="${progress}% da carga horária prevista">
+            <div class="tf-progress-inner"><b>${progress}%</b><span>DO DIA</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="tf-timeline-panel" aria-label="Linha do tempo de marcações">
+        <div class="tf-panel-heading">
+          <h3>Sua jornada</h3><small>${pad(punches.length)} / ${pad(total)} MARCAÇÕES</small>
+        </div>
+        <ol class="tf-timeline-list">${timeline}</ol>
+        <div class="tf-panel-foot"><span>PRÓXIMO MARCO</span>
+          <strong>${escapeHtml(homeStatusLine(d))}</strong>
+        </div>
+      </section>
     </div>
-    <div class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</div>
-  </section>
-  ${protection}
-  <section class="card soft center hero-card">
-    <div class="date-line">${activeLabel} · ${pad(baseDate.getDate())} de ${monthNames[baseDate.getMonth()]} de ${baseDate.getFullYear()} · ${weekFull[baseDate.getDay()]}</div>
-    <div class="clock" id="clockNow">${hm(n)}</div>
-    <button class="cta" id="beatBtn">BATER PONTO</button>
-    <div class="status-line ${st.cls==='danger'?'danger-tone':st.cls==='ok'?'ok-tone':''}" id="homeStatus">${homeStatusLine(d)}</div>
-    ${undoButton}
-  </section>
-  <section class="card"><h2 class="section-title">Batidas de hoje</h2>${punchCards(d)}</section>
-  <section class="card soft"><h2 class="section-title">Resumo do dia</h2><div class="kpi-strip two"><div class="kpi-mini"><span>Esperado</span><strong>${fmtMin(exp)}</strong></div><div class="kpi-mini"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong></div><div class="kpi-mini"><span>Saldo parcial</span><strong class="${saldo<0?'danger':'ok'}">${fmtMin(saldo)}</strong></div><div class="kpi-mini"><span>Status</span><strong class="${st.cls}">${st.text}</strong></div></div></section>
-  <section class="card"><h2 class="section-title">Histórico do dia anterior</h2><div class="row"><span>${brDate(yIso)} · ${weekShort[yesterday.getDay()].toUpperCase()}</span><b>${yd.punches?.length ? 'Registrado' : 'Sem registro'}</b></div>${ySummary}</section>`;
-  beatBtn.onclick = () => { addPunch(activeWorkDate(), hm(nowSP()), 'button'); };
-  const undoBtn = document.getElementById('undoLastBtn');
-  if(undoBtn) undoBtn.onclick = () => undoLastPunch(date);
-  const finishBtn = document.getElementById('finishOpenBtn');
-  if(finishBtn) finishBtn.onclick = () => addPunch(date, hm(nowSP()), 'button');
-  const undoOpenBtn = document.getElementById('undoOpenBtn');
-  if(undoOpenBtn) undoOpenBtn.onclick = () => undoLastPunch(date);
+    <section class="tf-metric-ribbon" aria-label="Indicadores de hoje">
+      <div class="tf-metric"><span>Previsto</span><strong>${fmtMin(expected)}</strong><small>Jornada contratual</small></div>
+      <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong><small>Tempo computado</small></div>
+      <div class="tf-metric"><span>Saldo parcial</span><strong class="${saldo>=0?'good':'bad'}">${fmtMin(saldo)}</strong><small>Estimativa do dia</small></div>
+      <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
+    </section>
+    <section class="tf-history-strip" aria-label="Dia anterior">
+      <div><p class="tf-eyebrow">OLHANDO PARA ONTEM</p><strong>${brDate(priorId)} · ${priorPunches.length?`${displayPunchTime(priorPunches,0)} → ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'Sem batidas registradas'}</strong></div>
+      <div class="tf-history-value">SALDO <b>${priorBalance}</b></div>
+    </section>
+  </div>`;
+  const beat=document.getElementById('beatBtn');
+  if(beat)beat.onclick=()=>addPunch(activeWorkDate(),hm(nowSP()),'button');
+  const undo=document.getElementById('undoLastBtn');
+  if(undo)undo.onclick=()=>undoLastPunch(date);
+  const finish=document.getElementById('finishOpenBtn');
+  if(finish)finish.onclick=()=>addPunch(date,hm(nowSP()),'button');
 }
-
 
 function brToIso(dateBr){
   const [dd,mm,yyyy] = dateBr.split('/');
