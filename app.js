@@ -634,7 +634,7 @@ function exportMonthCsv(year, month){
     const p = r.punches || [];
     const origem = [...new Set(p.map(x=>x.source||'manual'))].join(', ');
     const note = state.days[r.date]?.note || '';
-    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), r.pending?'':fmtMin(r.saldo), r.status.text, origem, note];
+    const vals = [brDate(r.date), r.weekday, model().title, p.length?displayPunchTime(p,0):'', model().punchMode==='manualLunch' ? (p[1]?.time||'') : '', model().punchMode==='manualLunch' ? (p[2]?.time||'') : '', p.length?displayPunchTime(p,p.length-1):'', fmtMin(r.worked), fmtMin(r.expected), r.pending||r.future?'':fmtMin(r.saldo), r.status.text, origem, note];
     lines.push(vals.map(escapeCsv).join(';'));
   });
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.csv`, lines.join('\n'), 'text/csv;charset=utf-8');
@@ -643,7 +643,7 @@ function exportMonthExcel(year, month){
   const st = monthStats(year,month);
   const rows = st.rows.map(r=>{
     const p = r.punches || [];
-    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${state.days[r.date]?.note||''}</td></tr>`;
+    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending||r.future?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${state.days[r.date]?.note||''}</td></tr>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Eu tenho um ponto. - ${monthNames[month]} ${year}</h1><table border="1"><tr><th>Previsto até hoje</th><th>Trabalhado</th><th>Saldo mês</th><th>Banco do ciclo</th><th>Marcações pendentes</th></tr><tr><td>${fmtMin(st.prev)}</td><td>${fmtMin(st.trab)}</td><td>${fmtMin(st.saldo)}</td><td>${fmtMin(st.cycleTotal)}</td><td>${st.pend}</td></tr></table><br><table border="1"><tr><th>Data</th><th>Dia</th><th>Modelo</th><th>Entrada</th><th>Saída almoço</th><th>Volta almoço</th><th>Saída</th><th>Trabalhado</th><th>Previsto</th><th>Saldo</th><th>Status</th><th>Observação</th></tr>${rows}</table></body></html>`;
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.xls`, html, 'application/vnd.ms-excel;charset=utf-8');
@@ -654,8 +654,12 @@ function reportText(year, month){
 Crédito do mês: ${fmtMin(st.monthCredit)}
 Banco do ciclo: ${fmtMin(st.cycleTotal)}${st.officialBank ? ` (oficial importado até ${st.officialBank.key.split('-').reverse().join('/')})` : ''}\nPendências: ${st.pend} (sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial})\nJornadas incompletas: ${st.incompleta}\nJornadas cravadas: ${st.cravada}\nJornadas superiores: ${st.superior}\n\nConferência:\n${st.issues.length ? st.issues.join('\n') : 'Nenhuma inconsistência encontrada.'}`;
 }
-function addPunch(date, time, source='manual'){
-  const d = day(date);
+function addPunch(date,time,source='manual'){
+  const d=day(date);
+  if(d.absenceType){
+    showToast('Este dia está como '+absenceLabel(d.absenceType)+'. Remova a ausência antes de registrar ponto.','warn');
+    return;
+  }
   if(d.punches.find(p=>p.time===time)){
     showToast('Essa marcação já existe neste dia.', 'warn');
     return;
