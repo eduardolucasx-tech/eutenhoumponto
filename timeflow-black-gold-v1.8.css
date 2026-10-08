@@ -275,3 +275,36 @@ html, body { background:#0b0b0d !important; color:var(--tf-ink); }
 .tf-app .tf-day-pixel.tf-medical{border-color:rgba(124,196,245,.32)}
 .tf-app .tf-day-pixel.tf-absence{border-color:rgba(239,133,133,.32)}
 .tf-app .tf-metric strong:empty{display:none}
+
+/* Timeflow 1.8.2 | overtime: the gold goal ring stays full at 100%.
+   Green exterior ring measures the extra hours, and center stays uncapped. */
+.tf-app .tf-progress{
+  isolation:isolate;
+  overflow:visible;
+  flex:none;
+}
+.tf-app .tf-progress-overtime::before{
+  content:"";
+  position:absolute;
+  inset:-8px;
+  border-radius:50%;
+  background:conic-gradient(var(--semantic-green) calc(var(--overtime-progress)*1%), rgba(96,209,160,.16) 0);
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));
+  mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));
+  pointer-events:none;
+}
+.tf-app .tf-progress-overtime b{color:var(--semantic-green)}
+.tf-app .tf-progress-overtime .tf-progress-inner span{
+  color:var(--semantic-green);
+  font-size:10px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.tf-app .tf-progress:not(.tf-progress-overtime) .tf-progress-inner span{
+  color:var(--gold-light);
+}
+.tf-app .tf-progress-inner b{font-variant-numeric:tabular-nums}
+@media(max-width:400px){
+  .tf-app .tf-progress-overtime::before{inset:-5px}
+  .tf-app .tf-progress-overtime .tf-progress-inner span{font-size:8px}
+}
