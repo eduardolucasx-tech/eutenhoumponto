@@ -1,0 +1,25 @@
+name: Validar Timeflow
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [fix/v1.8.3-santos-cloud-register]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Matrizes, nuvem e interface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar regressões
+        run: node --test tests/*.test.cjs
+      - name: Verificar JavaScript
+        run: node --check app.js && node --check sync-core.js
