@@ -117,7 +117,7 @@ test('saldo da Home não imputa horas negativas ao atestado',()=>{
   api.setDayAbsence(today,'atestado');
   api.renderHome();
   assert.match(nodes.screen.innerHTML,/Saldo do dia/);
-  assert.match(nodes.screen.innerHTML,/Atestado registrada/);
+  assert.match(nodes.screen.innerHTML,/Atestado registrado/);
   assert.match(nodes.screen.innerHTML,/00:00/);
 });
 test('a sincronização respeita cancelamento e devolve batidas',()=>{
