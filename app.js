@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.8.0';
+const APP_VERSION = 'v1.8.1';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -417,13 +417,15 @@ function workedMinutes(dayObj, partial=false){
 }
 function expectedMinutes(date){ return model() ? model().expected(date, state.profile) : 0; }
 function requiredPunches(){ return model()?.punchMode === 'autoLunch' ? 2 : 4; }
-function complete(dayObj){ return !!dayObj?.absenceType || !!dayObj?.closed || (dayObj.punches||[]).length >= requiredPunches() || expectedMinutes(dayObj.date) === 0; }
+function complete(dayObj){
+  // Sem batidas completas, ausência explícita ou dado oficial, não há apuração.
+  return !!dayObj?.absenceType||!!dayOfficialImpact(dayObj)
+    ||(dayObj?.punches||[]).length>=requiredPunches();
+}
 function isPending(dayObj){
-  if(dayObj?.absenceType) return false;
-  if(dayObj?.closed) return false;
-  const exp = expectedMinutes(dayObj.date);
-  if(exp <= 0) return false;
-  return (dayObj.punches||[]).length < requiredPunches();
+  if(dayObj?.absenceType||dayOfficialImpact(dayObj))return false;
+  if(expectedMinutes(dayObj.date)<=0)return false;
+  return (dayObj.punches||[]).length<requiredPunches();
 }
 function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
@@ -445,19 +447,23 @@ function tribunaLikeModel(){
 function absenceLabel(type){
   return ({ banco:'Folga banco', atestado:'Atestado', falta:'Falta' })[type] || '';
 }
-function setDayAbsence(date, type){
-  const d = day(date);
-  state.days[date]=PontoSync.setAbsence(d,type);
-  d.note = absenceLabel(type);
+function setDayAbsence(date,type){
+  const d=day(date);
+  try{state.days[date]=PontoSync.setAbsence(d,type);}
+  catch(err){showToast(err.message||'Falha ao registrar ausência.','warn');return;}
   save();
-  showToast(`${absenceLabel(type)} aplicada em ${brDate(date)}.`, type === 'atestado' ? 'ok' : 'warn');
+  const exp=expectedMinutes(date);
+  const message=exp===0&&type!=='atestado'
+    ? `${absenceLabel(type)} registrada em ${brDate(date)}. Carga prevista 00:00; sem débito.`
+    : `${absenceLabel(type)} registrada em ${brDate(date)}.`;
+  showToast(message,type==='atestado'?'ok':'warn');
 }
 function clearDayAbsence(date){
-  const d = day(date);
+  const d=day(date);
+  const restored=Boolean(d?.absenceBackup?.punches?.length);
   state.days[date]=PontoSync.clearAbsence(d);
-  if(['Folga banco','Atestado','Falta'].includes(state.days[date].note))state.days[date].note='';
   save();
-  showToast(`Ausência removida de ${brDate(date)}.`, 'ok');
+  showToast(`Ausência removida de ${brDate(date)}.${restored?' Batidas anteriores restauradas.':''}`,'ok');
 }
 function dayAbsenceImpact(dayObj){
   const type = dayObj?.absenceType;
@@ -484,7 +490,8 @@ function estimatedBankImpact(dayObj){
   const exp = expectedMinutes(dayObj.date);
   const w = workedMinutes(dayObj);
   if(exp <= 0 && !(dayObj.punches||[]).length) return { debit:0, credit:0, saldo:0, source:'estimated' };
-  if(isPending(dayObj)) return { debit: exp, credit:0, saldo:-exp, source:'pending_debit' };
+  // Falta de informação não é falta ao trabalho. Aguarda conferência.
+  if(isPending(dayObj))return {debit:0,credit:0,saldo:0,source:'pending_unconfirmed'};
   const saldo = w - exp;
   return { debit: Math.max(0, -saldo), credit: Math.max(0, saldo), saldo, source:'estimated' };
 }
@@ -541,9 +548,7 @@ function localSaldoAfterOfficial(cycle, official, year, month){
   for(let d=new Date(after); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    const exp = expectedMinutes(id);
-    const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
+    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
@@ -557,33 +562,43 @@ function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
     const id = iso(d);
     const obj = state.days[id] || {date:id,punches:[]};
-    const exp = expectedMinutes(id);
-    const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(done || isPending(obj)) saldo += estimatedBankImpact(obj).saldo;
+    if(complete(obj))saldo+=estimatedBankImpact(obj).saldo;
   }
   return saldo;
 }
 function monthStats(year, month){
   const now = nowSP();
   const first = new Date(year, month, 1); const last = new Date(year, month+1, 0);
-  let prev=0, trab=0, saldoConfirmado=0, pend=0, cravada=0, superior=0, incompleta=0;
+  let prev=0,trab=0,saldoConfirmado=0,pend=0,semRegistro=0,parcial=0,cravada=0,superior=0,incompleta=0;
   let debitEstimated=0, creditEstimated=0;
   const rows=[], issues=[];
   for(let d=new Date(first); d<=last; d.setDate(d.getDate()+1)){
-    const id=iso(d); const obj=state.days[id] || {date:id,punches:[]}; const exp=expectedMinutes(id); const w=workedMinutes(obj); const isPastOrToday = d <= now; const done = complete(obj) && (obj.punches?.length || exp===0);
-    if(isPastOrToday){ prev += exp; trab += w; if(isPending(obj)) pend++; }
-    const impact = estimatedBankImpact(obj);
-    if((done || isPending(obj)) && isPastOrToday){ saldoConfirmado += impact.saldo; debitEstimated += impact.debit; creditEstimated += impact.credit; }
+    const id=iso(d),obj=state.days[id]||{date:id,punches:[]};
+    const exp=expectedMinutes(id),w=workedMinutes(obj),isPastOrToday=d<=now;
+    const done=complete(obj),pending=isPending(obj),count=(obj.punches||[]).length;
+    if(isPastOrToday){
+      prev+=exp;trab+=w;
+      if(pending){pend++;if(count===0)semRegistro++;else parcial++;}
+    }
+    const impact=estimatedBankImpact(obj);
+    if(done&&isPastOrToday){
+      saldoConfirmado+=impact.saldo;
+      debitEstimated+=impact.debit;
+      creditEstimated+=impact.credit;
+    }
     const status = jornadaStatus(obj);
     if(isPastOrToday && done){ if(status.text==='Jornada cravada') cravada++; if(status.text==='Jornada superior') superior++; if(status.text==='Jornada incompleta') incompleta++; }
     const punches = punchesOf(obj);
     const dup = punches.some((p,i)=>i>0 && p.time===punches[i-1].time);
-    if(isPastOrToday && exp>0 && isPending(obj)) issues.push(`${brDate(id)}: marcação pendente`);
+    if(isPastOrToday&&pending)issues.push(`${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
     if(dup) issues.push(`${brDate(id)}: marcação duplicada`);
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
     const displayImpact = isPastOrToday ? impact : { debit:0, credit:0, saldo:0, source:'future' };
     const displayStatus = isPastOrToday ? status : { text:'Futuro', cls:'gray' };
-    rows.push({date:id, weekday:weekShort[d.getDay()].toUpperCase(), punches, expected:exp, worked:w, saldo:displayImpact.saldo, bankImpact:displayImpact, status:displayStatus, holiday:isHoliday(id,state.profile.city), pastOrToday:isPastOrToday, future:!isPastOrToday, done});
+    rows.push({date:id,weekday:weekShort[d.getDay()].toUpperCase(),punches,
+      expected:exp,worked:w,saldo:displayImpact.saldo,bankImpact:displayImpact,status:displayStatus,
+      holiday:isHoliday(id,state.profile.city),absenceType:obj.absenceType||null,
+      pending:isPastOrToday&&pending,pastOrToday:isPastOrToday,future:!isPastOrToday,done});
   }
   const cycle = bankCycleFor(`${year}-${pad(month+1)}-01`);
   const officialBank = findLatestOfficialBank(cycle, year, month);
@@ -595,7 +610,9 @@ function monthStats(year, month){
   const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado;
   const monthDebit = officialMonth ? officialMonth.debit : debitEstimated;
   const monthCredit = officialMonth ? officialMonth.credit : creditEstimated;
-  return {prev, trab, saldo:monthSaldo, saldoEstimado:saldoConfirmado, debitEstimated, creditEstimated, monthDebit, monthCredit, officialMonth, saldoConfirmado, cycleSaldo, cycleTotal, cycleBase, officialBank, pend, cravada, superior, incompleta, rows, issues, cycle};
+  return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado,debitEstimated,creditEstimated,
+    monthDebit,monthCredit,officialMonth,saldoConfirmado,cycleSaldo,cycleTotal,cycleBase,officialBank,
+    pend,semRegistro,parcial,cravada,superior,incompleta,rows,issues,cycle};
 }
 function escapeCsv(v){
   const str = String(v ?? '');
@@ -1590,53 +1607,22 @@ function safeMinutes(value){
 }
 
 function annualBankStats(year){
-  const todayIso = iso(nowSP());
-  const start = `${year}-01-01`;
-  const endOfYear = `${year}-12-31`;
-  const end = endOfYear < todayIso ? endOfYear : todayIso;
-
-  let positive = 0;
-  let negative = 0;
-  let total = 0;
-  let consideredDays = 0;
-  let pendingDays = 0;
-
-  for(const id of eachDate(start, end)){
-    let exp = safeMinutes(expectedMinutes(id));
-    if(exp <= 0) continue;
-
-    const obj = state.days[id] || { date:id, punches:[] };
-    let saldo = 0;
-
-    if(obj.absenceType === 'atestado'){
-      saldo = 0;
-    } else if(obj.absenceType === 'banco' || obj.absenceType === 'falta'){
-      saldo = -exp;
-    } else if(isPending(obj)){
-      saldo = -exp;
-      pendingDays++;
-    } else {
-      saldo = safeMinutes(estimatedBankImpact(obj).saldo);
-    }
-
-    if(saldo > 0) positive += saldo;
-    if(saldo < 0) negative += Math.abs(saldo);
-    total += saldo;
-    consideredDays++;
+  const todayIso=iso(nowSP()),start=`${year}-01-01`,yearEnd=`${year}-12-31`;
+  const end=yearEnd<todayIso?yearEnd:todayIso;
+  let positive=0,negative=0,total=0,consideredDays=0,pendingDays=0;
+  for(const id of eachDate(start,end)){
+    const obj=state.days[id]||{date:id,punches:[]};
+    const expected=safeMinutes(expectedMinutes(id));
+    if(expected<=0&&!obj.absenceType&&!obj.official&&!(obj.punches||[]).length)continue;
+    if(isPending(obj)){pendingDays++;continue;}
+    if(!complete(obj))continue;
+    const saldo=safeMinutes(estimatedBankImpact(obj).saldo);
+    if(saldo>0)positive+=saldo;
+    if(saldo<0)negative+=Math.abs(saldo);
+    total+=saldo;consideredDays++;
   }
-
-  return {
-    year,
-    start,
-    end,
-    positive:safeMinutes(positive),
-    negative:safeMinutes(negative),
-    total:safeMinutes(total),
-    consideredDays,
-    pendingDays
-  };
+  return {year,start,end,positive,negative,total,consideredDays,pendingDays};
 }
-
 
 function diagnosticRowForDay(date){
   const d = state.days[date] || { date, punches:[] };
