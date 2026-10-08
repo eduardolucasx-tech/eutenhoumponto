@@ -1,0 +1,57 @@
+name: Publicar Timeflow Black & Gold no GitHub Pages
+
+on:
+  push:
+    branches: [gh-pages]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Testar cálculos e ausências
+        run: node --test tests/absence-bank.test.cjs tests/progress.test.cjs
+
+      - name: Preparar arquivos estáticos
+        run: |
+          mkdir -p public
+          cp index.html preview.html style.css theme-v1.6.css \
+             timeflow-v1.7.css timeflow-map-v1.7.css \
+             timeflow-black-gold-v1.8.css \
+             app.js sync-core.js firebase-config.js manifest.json icon.svg \
+             public/
+          touch public/.nojekyll
+          test -s public/index.html
+          test -s public/app.js
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Preparar artefato
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Publicar
+        id: deployment
+        uses: actions/deploy-pages@v4
