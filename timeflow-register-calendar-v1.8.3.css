@@ -107,3 +107,18 @@
  .tf-app .tf-day-pixel{min-height:47px;padding:6px 4px}
  .tf-app .tf-calendar-weekday{font-size:9px}
 }
+
+/* 1.8.3 Saturday debit: estimated only, never confused with confirmed absence */
+.tf-app .tf-day-pixel.tf-saturday-provisional{
+  border-color:rgba(239,133,133,.38);
+  background:repeating-linear-gradient(135deg,rgba(239,133,133,.085) 0px,
+    rgba(239,133,133,.085) 5px,rgba(223,191,120,.045) 5px,
+    rgba(223,191,120,.045) 10px);
+}
+.tf-app .tf-day-pixel.tf-saturday-provisional .tf-day-mark{
+  background:linear-gradient(90deg,var(--semantic-red) 0 50%,var(--gold) 50% 100%);
+}
+.tf-app .tf-month-legend .legend-saturday{
+  background:linear-gradient(90deg,var(--semantic-red) 0 50%,var(--gold) 50% 100%);
+}
+.tf-app .day-item:has(.bal.neg) .bal.neg{font-variant-numeric:tabular-nums}
