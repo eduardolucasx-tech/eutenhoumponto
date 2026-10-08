@@ -355,7 +355,7 @@ function grossMinutesForExpected(net){
   return net > 345 ? net + 60 : net + 15;
 }
 function homeStatusLine(dayObj){
-  if(dayObj?.absenceType)return `${absenceLabel(dayObj.absenceType)} registrada`;
+  if(dayObj?.absenceType)return `${absenceLabel(dayObj.absenceType)} ${dayObj.absenceType==='atestado'?'registrado':'registrada'}`;
   const p = punchesOf(dayObj);
   const exp = expectedMinutes(dayObj.date);
   if(model()?.punchMode === 'autoLunch'){
@@ -592,6 +592,7 @@ function monthStats(year, month){
     const punches = punchesOf(obj);
     const dup = punches.some((p,i)=>i>0 && p.time===punches[i-1].time);
     if(isPastOrToday&&pending)issues.push(`${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
+    if(obj.absenceType&&dayOfficialImpact(obj))issues.push(`${brDate(id)}: ausência manual com valores oficiais diários; confira a divergência`);
     if(dup) issues.push(`${brDate(id)}: marcação duplicada`);
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
     const displayImpact = isPastOrToday ? impact : { debit:0, credit:0, saldo:0, source:'future' };
@@ -616,8 +617,10 @@ function monthStats(year, month){
     pend,semRegistro,parcial,cravada,superior,incompleta,rows,issues,cycle};
 }
 function escapeCsv(v){
-  const str = String(v ?? '');
-  return /[";\n]/.test(str) ? '"' + str.replace(/"/g,'""') + '"' : str;
+  // Impede interpretação de notas ou outros campos como fórmulas em planilhas.
+  const original=String(v??'');
+  const str=/^\s*[=+@-]/.test(original)?"'"+original:original;
+  return /[";\n]/.test(str)?'"'+str.replace(/"/g,'""')+'"':str;
 }
 function downloadBlob(filename, content, type){
   const blob = new Blob([content], {type});
@@ -643,7 +646,7 @@ function exportMonthExcel(year, month){
   const st = monthStats(year,month);
   const rows = st.rows.map(r=>{
     const p = r.punches || [];
-    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending||r.future?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${state.days[r.date]?.note||''}</td></tr>`;
+    return `<tr><td>${brDate(r.date)}</td><td>${r.weekday}</td><td>${model().title}</td><td>${p.length?displayPunchTime(p,0):''}</td><td>${model().punchMode==='manualLunch' ? (p[1]?.time||'') : ''}</td><td>${model().punchMode==='manualLunch' ? (p[2]?.time||'') : ''}</td><td>${p.length?displayPunchTime(p,p.length-1):''}</td><td>${fmtMin(r.worked)}</td><td>${fmtMin(r.expected)}</td><td>${r.pending||r.future?'':fmtMin(r.saldo)}</td><td>${r.status.text}</td><td>${escapeHtml(state.days[r.date]?.note||'')}</td></tr>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Eu tenho um ponto. - ${monthNames[month]} ${year}</h1><table border="1"><tr><th>Previsto até hoje</th><th>Trabalhado</th><th>Saldo mês</th><th>Banco do ciclo</th><th>Marcações pendentes</th></tr><tr><td>${fmtMin(st.prev)}</td><td>${fmtMin(st.trab)}</td><td>${fmtMin(st.saldo)}</td><td>${fmtMin(st.cycleTotal)}</td><td>${st.pend}</td></tr></table><br><table border="1"><tr><th>Data</th><th>Dia</th><th>Modelo</th><th>Entrada</th><th>Saída almoço</th><th>Volta almoço</th><th>Saída</th><th>Trabalhado</th><th>Previsto</th><th>Saldo</th><th>Status</th><th>Observação</th></tr>${rows}</table></body></html>`;
   downloadBlob(`eu_tenho_um_ponto_${year}_${pad(month+1)}.xls`, html, 'application/vnd.ms-excel;charset=utf-8');
@@ -916,7 +919,7 @@ function renderHome(){
     <section class="tf-metric-ribbon" aria-label="Indicadores de hoje">
       <div class="tf-metric"><span>Previsto</span><strong>${fmtMin(expected)}</strong><small>Jornada contratual</small></div>
       <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong><small>Tempo computado</small></div>
-      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>=0?'good':'bad'):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?'Dia apurado':'Batidas ou justificativa pendentes'}</small></div>
+      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>0?'good':saldo<0?'bad':''):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?'Dia apurado':'Batidas ou justificativa pendentes'}</small></div>
       <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
     </section>
     <section class="tf-history-strip" aria-label="Dia anterior">
@@ -1421,7 +1424,8 @@ function renderRegister(){
     regDate.onchange = draw;
     draw();
     saveReg.onclick = () => {
-      const dd = day(regDate.value);
+      const dd=day(regDate.value);
+      if(dd.absenceType&&!confirm('Substituir '+absenceLabel(dd.absenceType)+' por batidas manuais? A ausência deixará de contar no saldo.'))return;
       const values=[...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean);
       try{state.days[regDate.value]=PontoSync.replacePunches(dd,values.map(time=>({time,source:'typed'})));}
       catch(err){showToast(err.message,'warn');return;}
