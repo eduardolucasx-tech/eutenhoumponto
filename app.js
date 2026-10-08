@@ -1451,33 +1451,118 @@ function renderRegister(){
   <div id="registerBody" class="register-body"></div>`;
 
   const renderManual = () => {
-    const d = state.days[date] || { punches:[], note:'' };
-    const body = document.getElementById('registerBody');
-    body.innerHTML = `<section class="card"><h2>Registro manual</h2><p class="muted">Formulário adaptado ao modelo ${model().title}. Apenas os campos necessários são exibidos.</p><label>Data</label><input id="regDate" type="date" class="input" value="${date}"><div id="regFields"></div><label>Observação</label><textarea id="note" rows="3" placeholder="Opcional">${escapeHtml(d.note||'')}</textarea><button class="primary full" id="saveReg">Salvar marcações</button><button class="secondary full" id="undoRegBtn">Limpar última batida deste dia</button><div class="absence-actions"><button class="secondary" id="bankDayBtn">Folga banco</button><button class="secondary" id="medicalDayBtn">Atestado</button><button class="secondary danger-text" id="faultDayBtn">Falta</button></div><button class="secondary full" id="clearAbsenceBtn">Remover folga/atestado/falta</button></section><section class="card subtle-card"><div class="empty-state compact"><strong>Dica rápida</strong><span>${model().punchMode === 'autoLunch' ? 'Nos modelos Tribuna, o app considera apenas entrada e saída final.' : 'Nos modelos com almoço manual, lance as quatro batidas na ordem correta.'}</span></div></section>`;
-    const draw = () => {
-      const dd = state.days[regDate.value] || {punches:[]};
-      regFields.innerHTML = manualFields.map((f,i)=>`<div class="time-field"><label>${f}</label><input class="input punchInput" type="time" value="${dd.punches?.[i]?.time||''}" placeholder="HH:MM"></div>`).join('');
-      note.value = dd.note || '';
+    const body=document.getElementById('registerBody');
+    const activeDate=selectedRegisterDate||iso(nowSP());
+    const d=state.days[activeDate]||{date:activeDate,punches:[],note:''};
+    const scheduled=expectedMinutes(activeDate);
+    const city=state.profile?.city||model()?.city||'Santos';
+    const holiday=isHoliday(activeDate,city);
+    const weekdayName=weekFull[dateObj(activeDate).getDay()];
+    const absence=d.absenceType?absenceLabel(d.absenceType):'Nenhuma';
+    const isTribuna=model()?.punchMode==='autoLunch';
+    const legacyModel=['tribuna_hub_prog','tribuna_jornalismo'].includes(state.profile?.model);
+    const dayDescription=holiday?'Feriado previsto no calendário original'
+      :scheduled===0?'Dia sem jornada prevista'
+      :scheduled===240?'Jornada prevista de 4 horas'
+      :'Jornada prevista de '+fmtMin(scheduled);
+    const cloudSummary=previewMode?'Demonstração local, sem conexão à nuvem'
+      :cloudHistoryStats?'Histórico da nuvem: '+cloudHistoryStats.days+' dias em '+cloudHistoryStats.months+' meses'
+      :cloudReady?'Conta conectada. Histórico conciliado.':'Aguardando confirmação da nuvem';
+    body.innerHTML=`
+      <div class="tf-reg-layout">
+        <section class="card tf-reg-editor" aria-labelledby="registerEditorTitle">
+          <div class="tf-reg-heading">
+            <div><span class="tf-reg-eyebrow">01 / LANÇAMENTO</span>
+              <h2 id="registerEditorTitle">Suas marcações</h2>
+              <p class="muted">Apenas as batidas do dia escolhido serão alteradas.</p></div>
+            <span class="tf-reg-mode">${isTribuna?'02 BATIDAS':'04 BATIDAS'}</span>
+          </div>
+          <div class="tf-reg-date-card">
+            <label for="regDate">Data da jornada</label>
+            <input id="regDate" type="date" class="input" value="${activeDate}">
+            <div class="tf-reg-date-context"><span>${weekdayName}</span><strong>${dayDescription}</strong></div>
+          </div>
+          <div class="tf-reg-blockhead">
+            <div><span class="tf-reg-eyebrow">02 / HORÁRIOS</span><h3>Batidas do expediente</h3></div>
+            <span>${(d.punches||[]).length} registradas</span>
+          </div>
+          <div id="regFields" class="tf-reg-times"></div>
+          <div class="tf-reg-notes"><label for="note">Observação do dia</label>
+            <textarea id="note" rows="3" placeholder="Opcional: ajuste, justificativa ou informação relevante">${escapeHtml(d.note||'')}</textarea></div>
+          <div class="tf-reg-footer">
+            <button class="primary" id="saveReg" type="button">Salvar marcações <span aria-hidden="true">↗</span></button>
+            <button class="secondary" id="undoRegBtn" type="button">Corrigir última batida</button>
+          </div>
+        </section>
+        <aside class="tf-reg-sidebar" aria-label="Contexto e justificativas do dia">
+          <section class="card tf-reg-context">
+            <span class="tf-reg-eyebrow">MATRIZ ORIGINAL</span>
+            <h3>${escapeHtml(model().title)}</h3>
+            <dl class="tf-reg-facts">
+              <div><dt>Calendário</dt><dd>${escapeHtml(city)}</dd></div>
+              <div><dt>Carga prevista</dt><dd>${fmtMin(scheduled)}</dd></div>
+              <div><dt>Almoço</dt><dd>${isTribuna?'Automático, pela regra original':'Informado nas quatro batidas'}</dd></div>
+              <div><dt>Justificativa atual</dt><dd>${escapeHtml(absence)}</dd></div>
+            </dl>
+            <p class="tf-reg-note">${legacyModel?'A matriz Tribuna/Santos e a configuração da escala original são mantidas.':'Jornada conforme modelo salvo no seu perfil.'}</p>
+            <p class="tf-reg-cloud">${escapeHtml(cloudSummary)}</p>
+          </section>
+          <section class="card tf-reg-leave">
+            <span class="tf-reg-eyebrow">03 / OCORRÊNCIAS</span>
+            <h3>Justificar o dia</h3>
+            <p class="muted">Folga Banco e Falta usam a carga prevista. Atestado não gera débito.</p>
+            <div class="tf-reg-leave-actions">
+              <button class="secondary tf-reg-bank" id="bankDayBtn" type="button">Folga Banco</button>
+              <button class="secondary tf-reg-medical" id="medicalDayBtn" type="button">Atestado</button>
+              <button class="secondary tf-reg-fault" id="faultDayBtn" type="button">Falta</button>
+            </div>
+            <button class="secondary tf-reg-clear" id="clearAbsenceBtn" type="button">Remover justificativa</button>
+          </section>
+        </aside>
+      </div>`;
+    const dateEl=document.getElementById('regDate');
+    const fieldEl=document.getElementById('regFields');
+    const noteEl=document.getElementById('note');
+    const draw=()=>{
+      const selected=dateEl.value||activeDate;
+      const record=state.days[selected]||{date:selected,punches:[],note:''};
+      const items=manualFields.map((name,i)=>{
+        const kind=i===0?'entry':i===manualFields.length-1?'exit':i===1?'break':'return';
+        return `<label class="tf-reg-time tf-reg-time-${kind}">
+          <span class="tf-reg-time-index">${pad(i+1)}</span>
+          <span class="tf-reg-time-name">${name}</span>
+          <input type="time" class="input punchInput" aria-label="${name}" value="${record.punches?.[i]?.time||''}" step="60">
+        </label>`;
+      });
+      fieldEl.innerHTML=items.join('');
+      noteEl.value=record.note||'';
     };
-    regDate.onchange = draw;
+    dateEl.onchange=()=>{
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dateEl.value))return;
+      selectedRegisterDate=dateEl.value;
+      renderRegister();
+    };
     draw();
-    saveReg.onclick = () => {
-      const dd=day(regDate.value);
-      if(dd.absenceType&&!confirm('Substituir '+absenceLabel(dd.absenceType)+' por batidas manuais? A ausência deixará de contar no saldo.'))return;
-      const values=[...document.querySelectorAll('.punchInput')].map(i=>i.value).filter(Boolean);
-      try{state.days[regDate.value]=PontoSync.replacePunches(dd,values.map(time=>({time,source:'typed'})));}
-      catch(err){showToast(err.message,'warn');return;}
-      state.days[regDate.value].note=note.value;
+    document.getElementById('saveReg').onclick=()=>{
+      const selected=dateEl.value;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){showToast('Escolha uma data válida.','warn');return;}
+      const original=state.days[selected]||{date:selected,punches:[],note:''};
+      if(original.absenceType&&!confirm('Substituir '+absenceLabel(original.absenceType)+' por batidas manuais? A ocorrência deixará de contar no saldo.'))return;
+      const values=[...document.querySelectorAll('.punchInput')].map(input=>input.value).filter(Boolean);
+      try{
+        const updated=PontoSync.replacePunches(original,values.map(time=>({time,source:'typed'})));
+        updated.note=noteEl.value;
+        state.days[selected]=updated;
+      }catch(err){showToast(err.message,'warn');return;}
+      selectedRegisterDate=selected;
       save();
-      showToast('Marcações manuais salvas.', 'ok');
-      tab='home';
-      render();
+      showToast('Marcações de '+brDate(selected)+' salvas.','ok');
     };
-    undoRegBtn.onclick = () => undoLastPunch(regDate.value);
-    if(bankDayBtn) bankDayBtn.onclick = () => setDayAbsence(regDate.value, 'banco');
-    if(medicalDayBtn) medicalDayBtn.onclick = () => setDayAbsence(regDate.value, 'atestado');
-    if(faultDayBtn) faultDayBtn.onclick = () => setDayAbsence(regDate.value, 'falta');
-    if(clearAbsenceBtn) clearAbsenceBtn.onclick = () => clearDayAbsence(regDate.value);
+    document.getElementById('undoRegBtn').onclick=()=>undoLastPunch(dateEl.value);
+    document.getElementById('bankDayBtn').onclick=()=>setDayAbsence(dateEl.value,'banco');
+    document.getElementById('medicalDayBtn').onclick=()=>setDayAbsence(dateEl.value,'atestado');
+    document.getElementById('faultDayBtn').onclick=()=>setDayAbsence(dateEl.value,'falta');
+    document.getElementById('clearAbsenceBtn').onclick=()=>clearDayAbsence(dateEl.value);
   };
 
   const renderImportView = () => {
