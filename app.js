@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.7.0';
+const APP_VERSION = 'v1.8.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -824,8 +824,9 @@ function renderHome(){
   const timeline=labels.map((label,i)=>{
     const registered=!!punches[i];
     const inProgress=!registered && i===punches.length;
+    const phase=i===0?'tf-entry':i===labels.length-1?'tf-exit':i===1?'tf-break':'tf-return';
     const status=registered?'Registrado':inProgress?'Próximo passo':'Aguardando';
-    return `<li class="tf-timeline-step ${registered?'done':inProgress?'current':''}">
+    return `<li class="tf-timeline-step ${phase} ${registered?'done':inProgress?'current':''}">
       <span class="tf-timeline-dot">${registered?'✓':pad(i+1)}</span>
       <div class="tf-timeline-info">
         <div><div class="tf-timeline-name">${label}</div><span class="tf-timeline-sub">${status}</span></div>
@@ -1748,6 +1749,7 @@ function renderMonth(){
     const typ=r.future?'future'
       :r.expected===0 && !(r.punches||[]).length?'off'
       :!(r.punches||[]).length?'empty'
+      :isPending(state.days[r.date]||{date:r.date,punches:r.punches||[]})?'incomplete'
       :r.saldo<0?'negative'
       :'positive';
     const future=r.future;
@@ -1771,6 +1773,7 @@ function renderMonth(){
     <div class="tf-month-legend">
       <span><i class="legend-good"></i> Positivo</span>
       <span><i class="legend-bad"></i> Negativo</span>
+      <span><i class="legend-pending"></i> Incompleto</span>
       <span><i class="legend-empty"></i> Sem batidas</span>
       <span><i class="legend-off"></i> Folga / feriado</span>
     </div>
