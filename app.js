@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.6.1-preview';
+const APP_VERSION = 'v1.7.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -253,6 +253,25 @@ function startPreview(){
   cloudLastError='';
   state=load(PREVIEW_UID);
   state.user=previewUser();
+  if(!state.profile){
+    state.profile={model:'tribuna_hub_prog',city:'Santos',bankStart:0,scaleStartDate:null,demoData:true,createdAt:new Date().toISOString()};
+    const today=nowSP();
+    for(let offset=1;offset<=5;offset++){
+      const date=new Date(today);date.setDate(today.getDate()-offset);
+      const id=iso(date);
+      if(expectedMinutes(id)>0){
+        state.days[id]={date:id,punches:[
+          {time:'09:04',source:'preview_example'},
+          {time:offset%2===0?'18:22':'18:12',source:'preview_example'}
+        ],note:'Exemplo da demonstração',closed:true};
+      }
+    }
+    const minutes=today.getHours()*60+today.getMinutes();
+    if(expectedMinutes(iso(today))>0 && minutes>150){
+      const start=minutes-115;
+      state.days[iso(today)]={date:iso(today),punches:[{time:`${pad(Math.floor(start/60))}:${pad(start%60)}`,source:'preview_example'}],note:'Exemplo da demonstração'};
+    }
+  }
   tab='home';
   persistLocal();
   render();
@@ -678,6 +697,7 @@ function goProfile(){
 function render(){
   try{
     const currentTab = tab || 'home';
+    if(screenEl?.dataset)screenEl.dataset.view=currentTab;
     document.querySelectorAll('.bottom-nav button').forEach((button) => {
       const btnTab = button.dataset.tab;
       button.classList.toggle('active', btnTab === currentTab || ((btnTab === 'config' || btnTab === 'profile') && (currentTab === 'config' || currentTab === 'profile')));
@@ -781,48 +801,112 @@ function renderScaleSetup(){
   saveScale.onclick = () => { state.profile.scaleStartDate = scaleStart.value; save(); };
 }
 function renderHome(){
-  const n = nowSP(), date = activeWorkDate(), d = day(date), worked = workedMinutes(d, true), exp = expectedMinutes(date), saldo = worked-exp, st = jornadaStatus(d, true);
-  const baseDate = dateObj(date);
-  const isOpen = isOpenShift(d);
-  const openMins = isOpen ? minutesSinceFirstPunch(date, d) : 0;
-  const overdue = isOpen && openMins >= 18*60;
-  const yesterday = new Date(baseDate); yesterday.setDate(baseDate.getDate()-1); const yIso = iso(yesterday); const yd = state.days[yIso] || {date:yIso,punches:[]};
-  const activeLabel = date !== iso(n) ? 'Jornada em andamento' : 'Hoje';
-  const protection = overdue ? `<section class="card warning-card"><h2 class="section-title">Jornada aberta</h2><p>Existe uma jornada aberta há ${fmtMin(openMins)}. Confira antes de continuar.</p><div class="actions"><button class="secondary" id="finishOpenBtn">Concluir agora</button><button class="secondary danger-text" id="undoOpenBtn">Limpar última batida</button></div></section>` : '';
-  const undoButton = (d.punches||[]).length ? `<button class="secondary full" id="undoLastBtn">Limpar última batida</button>` : '';
-  const ySaldo = workedMinutes(yd)-expectedMinutes(yIso);
-  const ySummary = yd.punches?.length
-    ? `<div class="history-mini"><span>${displayPunchTime(yd.punches,0)} → ${displayPunchTime(yd.punches, yd.punches.length-1)}</span><strong class="${ySaldo<0?'danger':'ok'}">${fmtMin(ySaldo)}</strong></div>`
-    : `<div class="empty-state compact">Nenhuma marcação registrada no dia anterior.</div>`;
-  screenEl.innerHTML = `
-  <section class="card home-profile slim">
-    <div class="hello">
-      <small>Olá, ${escapeHtml(userFirstName())}</small>
-      <strong>Vamos registrar seu ponto?</strong>
-      <p class="tagline">${model().title}</p>
+  if(screenEl?.dataset)screenEl.dataset.view='home';
+  const n=nowSP();
+  const date=activeWorkDate();
+  const d=day(date);
+  const worked=workedMinutes(d,true);
+  const expected=expectedMinutes(date);
+  const saldo=worked-expected;
+  const jornada=jornadaStatus(d,true);
+  const stamp=dateObj(date);
+  const punches=punchesOf(d);
+  const total=requiredPunches();
+  const progress=expected>0?Math.round(Math.max(0,Math.min(1,worked/expected))*100):0;
+  const fullyMarked=punches.length>=total || Boolean(d.absenceType);
+  const open=isOpenShift(d);
+  const openMins=open?minutesSinceFirstPunch(date,d):0;
+  const overdue=open && openMins>=18*60;
+  const labels=model()?.punchMode==='autoLunch'
+    ? ['Entrada','Saída']
+    : ['Entrada','Intervalo','Retorno','Saída'];
+  const nextLabel=fullyMarked?'Jornada registrada':punches.length===0?'Registrar entrada':`Registrar ${labels[Math.min(punches.length,labels.length-1)].toLowerCase()}`;
+  const timeline=labels.map((label,i)=>{
+    const registered=!!punches[i];
+    const inProgress=!registered && i===punches.length;
+    const status=registered?'Registrado':inProgress?'Próximo passo':'Aguardando';
+    return `<li class="tf-timeline-step ${registered?'done':inProgress?'current':''}">
+      <span class="tf-timeline-dot">${registered?'✓':pad(i+1)}</span>
+      <div class="tf-timeline-info">
+        <div><div class="tf-timeline-name">${label}</div><span class="tf-timeline-sub">${status}</span></div>
+        <time class="tf-timeline-time">${registered?displayPunchTime(punches,i):'--:--'}</time>
+      </div>
+    </li>`;
+  }).join('');
+  const prior=new Date(stamp);
+  prior.setDate(prior.getDate()-1);
+  const priorId=iso(prior);
+  const yd=state.days[priorId]||{date:priorId,punches:[]};
+  const priorPunches=punchesOf(yd);
+  const priorBalance=priorPunches.length?fmtMin(workedMinutes(yd)-expectedMinutes(priorId)):'Sem registro';
+  const undoButton=punches.length
+    ? '<button class="secondary" id="undoLastBtn" type="button">↶ Corrigir última batida</button>':'';
+  const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
+  const kind=date!==iso(n)?'Jornada anterior em andamento':'Jornada de hoje';
+  const warning=overdue?`<div class="tf-alert" role="alert">
+      <div><strong>Atenção: jornada aberta há ${fmtMin(openMins)}</strong><p>Revise os horários antes de continuar.</p></div>
+      <button class="secondary" id="finishOpenBtn">Concluir agora</button>
+    </div>`:'';
+  screenEl.innerHTML=`<div class="tf-home">
+    <header class="tf-intro">
+      <div><p class="tf-eyebrow">${dayLabel.toUpperCase()} ${previewMode?'· DADOS SIMULADOS':''}</p>
+        <h2>Seu tempo,<br><span>sob controle.</span></h2>
+      </div>
+      <div class="tf-sync-line"><span class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</span></div>
+    </header>
+    ${warning}
+    <div class="tf-stage-grid">
+      <section class="tf-stage" aria-labelledby="stageTitle">
+        <div class="tf-stage-top">
+          <span class="tf-stage-label" id="stageTitle">${kind.toUpperCase()}</span>
+          <span class="tf-stage-index">01 / PRESENTE</span>
+        </div>
+        <div class="tf-datetime">
+          <div class="tf-bigclock" id="clockNow">${hm(n)}</div>
+          <div class="tf-now-caption">${fullyMarked?'Todas as marcações registradas':open?'Jornada em andamento':'Pronto para começar'}</div>
+        </div>
+        <div class="tf-stage-bottom">
+          <div class="tf-stage-action">
+            <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>
+              <span>${nextLabel}</span><span class="arrow" aria-hidden="true">↗</span>
+            </button>
+            <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
+            ${undoButton}
+          </div>
+          <div class="tf-progress" style="--progress:${progress}" role="img"
+             aria-label="${progress}% da carga horária prevista">
+            <div class="tf-progress-inner"><b>${progress}%</b><span>DO DIA</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="tf-timeline-panel" aria-label="Linha do tempo de marcações">
+        <div class="tf-panel-heading">
+          <h3>Sua jornada</h3><small>${pad(punches.length)} / ${pad(total)} MARCAÇÕES</small>
+        </div>
+        <ol class="tf-timeline-list">${timeline}</ol>
+        <div class="tf-panel-foot"><span>PRÓXIMO MARCO</span>
+          <strong>${escapeHtml(homeStatusLine(d))}</strong>
+        </div>
+      </section>
     </div>
-    <div class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</div>
-  </section>
-  ${protection}
-  <section class="card soft center hero-card">
-    <div class="date-line">${activeLabel} · ${pad(baseDate.getDate())} de ${monthNames[baseDate.getMonth()]} de ${baseDate.getFullYear()} · ${weekFull[baseDate.getDay()]}</div>
-    <div class="clock" id="clockNow">${hm(n)}</div>
-    <button class="cta" id="beatBtn">BATER PONTO</button>
-    <div class="status-line ${st.cls==='danger'?'danger-tone':st.cls==='ok'?'ok-tone':''}" id="homeStatus">${homeStatusLine(d)}</div>
-    ${undoButton}
-  </section>
-  <section class="card"><h2 class="section-title">Batidas de hoje</h2>${punchCards(d)}</section>
-  <section class="card soft"><h2 class="section-title">Resumo do dia</h2><div class="kpi-strip two"><div class="kpi-mini"><span>Esperado</span><strong>${fmtMin(exp)}</strong></div><div class="kpi-mini"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong></div><div class="kpi-mini"><span>Saldo parcial</span><strong class="${saldo<0?'danger':'ok'}">${fmtMin(saldo)}</strong></div><div class="kpi-mini"><span>Status</span><strong class="${st.cls}">${st.text}</strong></div></div></section>
-  <section class="card"><h2 class="section-title">Histórico do dia anterior</h2><div class="row"><span>${brDate(yIso)} · ${weekShort[yesterday.getDay()].toUpperCase()}</span><b>${yd.punches?.length ? 'Registrado' : 'Sem registro'}</b></div>${ySummary}</section>`;
-  beatBtn.onclick = () => { addPunch(activeWorkDate(), hm(nowSP()), 'button'); };
-  const undoBtn = document.getElementById('undoLastBtn');
-  if(undoBtn) undoBtn.onclick = () => undoLastPunch(date);
-  const finishBtn = document.getElementById('finishOpenBtn');
-  if(finishBtn) finishBtn.onclick = () => addPunch(date, hm(nowSP()), 'button');
-  const undoOpenBtn = document.getElementById('undoOpenBtn');
-  if(undoOpenBtn) undoOpenBtn.onclick = () => undoLastPunch(date);
+    <section class="tf-metric-ribbon" aria-label="Indicadores de hoje">
+      <div class="tf-metric"><span>Previsto</span><strong>${fmtMin(expected)}</strong><small>Jornada contratual</small></div>
+      <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong><small>Tempo computado</small></div>
+      <div class="tf-metric"><span>Saldo parcial</span><strong class="${saldo>=0?'good':'bad'}">${fmtMin(saldo)}</strong><small>Estimativa do dia</small></div>
+      <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
+    </section>
+    <section class="tf-history-strip" aria-label="Dia anterior">
+      <div><p class="tf-eyebrow">OLHANDO PARA ONTEM</p><strong>${brDate(priorId)} · ${priorPunches.length?`${displayPunchTime(priorPunches,0)} → ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'Sem batidas registradas'}</strong></div>
+      <div class="tf-history-value">SALDO <b>${priorBalance}</b></div>
+    </section>
+  </div>`;
+  const beat=document.getElementById('beatBtn');
+  if(beat)beat.onclick=()=>addPunch(activeWorkDate(),hm(nowSP()),'button');
+  const undo=document.getElementById('undoLastBtn');
+  if(undo)undo.onclick=()=>undoLastPunch(date);
+  const finish=document.getElementById('finishOpenBtn');
+  if(finish)finish.onclick=()=>addPunch(date,hm(nowSP()),'button');
 }
-
 
 function brToIso(dateBr){
   const [dd,mm,yyyy] = dateBr.split('/');
@@ -1286,6 +1370,7 @@ function applyCommonSpreadsheetImport(parsed){
 }
 
 function renderRegister(){
+  if(screenEl?.dataset)screenEl.dataset.view='register';
   const date = selectedRegisterDate || iso(nowSP());
   const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
   screenEl.innerHTML = `
@@ -1639,6 +1724,7 @@ function renderMonthDiagnostic(year, month){
 }
 
 function renderMonth(){
+  if(screenEl?.dataset)screenEl.dataset.view='month';
   const n = nowSP();
   const currentValue = `${n.getFullYear()}-${pad(n.getMonth()+1)}`;
   const value = selectedMonthValue || currentValue;
@@ -1658,13 +1744,41 @@ function renderMonth(){
   const bankBody = st.officialBank ?
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
+  const monthMap = st.rows.map(r=>{
+    const typ=r.future?'future'
+      :r.expected===0 && !(r.punches||[]).length?'off'
+      :!(r.punches||[]).length?'empty'
+      :r.saldo<0?'negative'
+      :'positive';
+    const future=r.future;
+    return '<button type="button" class="tf-day-pixel tf-'+typ+(future?'':' clickable-day')+'"'
+      +(future?' disabled':' data-day="'+r.date+'"')
+      +' title="'+brDate(r.date)+' | '+(future?'Dia futuro':fmtMin(r.saldo))+'">'
+      +'<span class="tf-day-number">'+Number(r.date.slice(-2))+'</span>'
+      +'<span class="tf-day-mark" aria-hidden="true"></span></button>';
+  }).join('');
   const emptyMonth = !st.rows.some(r => (r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   screenEl.innerHTML = `
-  <section class="card"><div class="section-head"><div><h2>Mês</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
+  <div class="tf-section-intro">
+    <div><p class="tf-eyebrow">02 / HISTÓRICO MENSAL</p>
+      <h2>Um mês.<br><span>Todos os movimentos.</span></h2></div>
+    <p>Uma leitura visual da sua jornada, com cada dia ao alcance de um toque.</p>
+  </div>
+  <section class="tf-month-map" aria-label="Mapa dos dias do mês">
+    <div class="tf-map-heading"><h3>Mapa da jornada</h3><span>${monthNames[month]} / ${year}</span></div>
+    <div class="tf-month-heatmap">${monthMap}</div>
+    <div class="tf-month-legend">
+      <span><i class="legend-good"></i> Positivo</span>
+      <span><i class="legend-bad"></i> Negativo</span>
+      <span><i class="legend-empty"></i> Sem batidas</span>
+      <span><i class="legend-off"></i> Folga / feriado</span>
+    </div>
+  </section>
+  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Marcações pendentes</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo}</p></section>
   ${isTraditionalModel()
-    ? `<section class="card"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
-    : `<section class="card"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
+    ? `<section class="card tf-bank-summary"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: soma simples de positivos e negativos de 01/01 até hoje.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
+    : `<section class="card tf-bank-summary"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
   ${renderMonthDrawer('records', 'Registro mensal', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml, `${st.rows.length} dia${st.rows.length===1?'':'s'}`)}
   ${renderMonthDiagnostic(year, month)}
   <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
@@ -1700,6 +1814,7 @@ function renderImport(){
   };
 }
 function renderProfileScreen(){
+  if(screenEl?.dataset)screenEl.dataset.view='config';
   const currentModel = state.profile?.model || 'tribuna_hub_prog';
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
