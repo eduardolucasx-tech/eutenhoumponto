@@ -2,9 +2,8 @@ name: Validar Timeflow
 
 on:
   pull_request:
-    branches: [main]
   push:
-    branches: [fix/v1.8.3-santos-cloud-register]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -22,4 +21,4 @@ jobs:
       - name: Validar regressões
         run: node --test tests/*.test.cjs
       - name: Verificar JavaScript
-        run: node --check app.js && node --check sync-core.js
+        run: for f in *.js; do node --check "$f" || exit 1; done

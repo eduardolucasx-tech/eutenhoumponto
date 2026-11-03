@@ -1,4 +1,4 @@
-/* Eu tenho um ponto. | v1.5.0 | Marcação e merge sem perda de exclusões */
+/* Eu tenho um ponto. | v1.9.0 | Marcação, merge sem perda de exclusões e compactação */
 (function(root,factory){
   const api=factory();
   if(typeof module!=='undefined' && module.exports) module.exports=api;
@@ -127,5 +127,17 @@
       result[date]=mergeDay(localDays?.[date],cloudDays?.[date],date);
     return result;
   }
-  return {normalizeDay,replacePunches,addPunch,removeLastPunch,setAbsence,clearAbsence,mergeDay,mergeDays};
+  // Tombstones (deletedPunchIds) só servem para impedir que um aparelho com cópia
+  // antiga ressuscite uma batida apagada. Em dias antigos esse risco é desprezível,
+  // e manter tudo para sempre empurra o documento para o limite de 1 MiB do Firestore.
+  function compactTombstones(days={},cutoffDate){
+    const result={};
+    for(const [date,value] of Object.entries(days||{})){
+      if(!value||typeof value!=='object'){result[date]=value;continue;}
+      result[date]=(cutoffDate&&date<cutoffDate&&Array.isArray(value.deletedPunchIds)&&value.deletedPunchIds.length)
+        ? {...value,deletedPunchIds:[]} : value;
+    }
+    return result;
+  }
+  return {normalizeDay,replacePunches,addPunch,removeLastPunch,setAbsence,clearAbsence,mergeDay,mergeDays,compactTombstones};
 });

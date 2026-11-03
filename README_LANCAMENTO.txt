@@ -131,7 +131,7 @@ Mudança:
   Data | Entrada | Saída almoço | Volta almoço | Saída final
 
 Exemplo aceito:
-02/02/2026    07:31:00    13:33:00    14:33:00    17:57:00
+05/01/2026    08:00:00    12:00:00    13:00:00    17:00:00
 
 Mapeamento:
 - Coluna 1: Data
