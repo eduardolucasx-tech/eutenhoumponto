@@ -1,2 +1,2 @@
-v1.9.0
-Build: Auditoria — importações preservam ausências, feriados por ano, deploy completo, limite da nuvem
+v2.0.0
+Build: Visual claro e minimalista com tema escuro automático; folha de estilo única
