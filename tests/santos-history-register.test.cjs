@@ -26,7 +26,7 @@ function boot(profile={model:'tribuna_hub_prog',city:'Santos',bankStart:0}){
 }
 test('calendário é STQQSSD com sete colunas em toda resolução',()=>{
  assert.match(css,/grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/);
- assert.match(html,/href=\"app\.css\"/);
+ assert.match(html,/href="app\.css(\?v=[^"]*)?"/);
  const {api,nodes}=boot();
  api.setMonth('2026-10');api.renderMonth();
  const h=nodes.screen.innerHTML;
