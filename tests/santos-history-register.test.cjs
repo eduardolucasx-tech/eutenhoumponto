@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const PontoSync=require('../sync-core.js');
 const source=fs.readFileSync(path.join(__dirname,'..','app.js'),'utf8');
-const css=fs.readFileSync(path.join(__dirname,'..','timeflow-register-calendar-v1.8.3.css'),'utf8');
+const css=fs.readFileSync(path.join(__dirname,'..','app.css'),'utf8');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 function el(){return {innerHTML:'',textContent:'',dataset:{},value:'',onclick:null,classList:{toggle(){},add(){},remove(){}},appendChild(){},addEventListener(){},remove(){}};}
 function boot(profile={model:'tribuna_hub_prog',city:'Santos',bankStart:0}){
@@ -26,7 +26,7 @@ function boot(profile={model:'tribuna_hub_prog',city:'Santos',bankStart:0}){
 }
 test('calendário é STQQSSD com sete colunas em toda resolução',()=>{
  assert.match(css,/grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/);
- assert.match(html,/timeflow-register-calendar-v1\.8\.3\.css/);
+ assert.match(html,/href=\"app\.css\"/);
  const {api,nodes}=boot();
  api.setMonth('2026-10');api.renderMonth();
  const h=nodes.screen.innerHTML;
@@ -55,7 +55,7 @@ test('Registrar mantém as duas batidas do modelo Tribuna',()=>{
  const {api,nodes}=boot();
  api.renderRegister();
  assert.match(nodes.registerBody.innerHTML,/tf-reg-layout/);
- assert.match(nodes.registerBody.innerHTML,/MATRIZ ORIGINAL/);
+ assert.match(nodes.registerBody.innerHTML,/Regras do dia/);
  assert.match(nodes.registerBody.innerHTML,/Calendário<\/dt><dd>Santos/);
  assert.equal((nodes.regFields.innerHTML.match(/class="input punchInput"/g)||[]).length,2);
  for(const id of ['saveReg','bankDayBtn','medicalDayBtn','faultDayBtn','clearAbsenceBtn'])

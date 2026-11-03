@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.9.0';
+const APP_VERSION = 'v2.0.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -896,7 +896,7 @@ async function logoutGoogle(){
 }
 
 function renderLogin(){
-  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">1.</div><h2>Eu tenho um ponto.</h2><p class="muted">Escolha como acessar o aplicativo.</p><button class="google" id="googleLogin">Entrar com Google</button><button class="secondary full" id="demoLogin">Experimentar sem login</button><p class="muted" style="margin-top:12px">A demonstração usa armazenamento local separado. Nenhum registro será enviado ao Firebase.</p><p class="muted">Versão ${APP_VERSION}</p></section></div>`;
+  screenEl.innerHTML = `<div class="login-wrap"><section class="card center" style="width:100%"><div class="login-logo">e.</div><h2>Eu tenho um ponto</h2><p class="muted">Escolha como acessar o aplicativo.</p><button class="google" id="googleLogin">Entrar com Google</button><button class="secondary full" id="demoLogin">Experimentar sem login</button><p class="muted" style="margin-top:12px">A demonstração usa armazenamento local separado. Nenhum registro será enviado ao Firebase.</p><p class="muted">Versão ${APP_VERSION}</p></section></div>`;
   const btn = document.getElementById('googleLogin');
   if(btn)btn.onclick=()=>loginWithGoogle();
   document.getElementById('demoLogin').onclick=startPreview;
@@ -979,11 +979,9 @@ function renderHome(){
     const phase=i===0?'tf-entry':i===labels.length-1?'tf-exit':i===1?'tf-break':'tf-return';
     const status=registered?'Registrado':inProgress?'Próximo passo':'Aguardando';
     return `<li class="tf-timeline-step ${phase} ${registered?'done':inProgress?'current':''}">
-      <span class="tf-timeline-dot">${registered?'OK':pad(i+1)}</span>
-      <div class="tf-timeline-info">
-        <div><div class="tf-timeline-name">${label}</div><span class="tf-timeline-sub">${status}</span></div>
-        <time class="tf-timeline-time">${registered?displayPunchTime(punches,i):'--:--'}</time>
-      </div>
+      <span class="tf-timeline-dot" aria-hidden="true"></span>
+      <span class="tf-timeline-name">${label}</span>
+      <time class="tf-timeline-time">${registered?displayPunchTime(punches,i):inProgress?'próximo':'--:--'}</time>
     </li>`;
   }).join('');
   const prior=new Date(stamp);
@@ -1003,64 +1001,43 @@ function renderHome(){
       <div><strong>Atenção: jornada aberta há ${fmtMin(openMins)}</strong><p>Revise os horários antes de continuar.</p></div>
       <button class="secondary" id="finishOpenBtn">Concluir agora</button>
     </div>`:'';
+  const cycleNow=monthStats(stamp.getFullYear(),stamp.getMonth());
+  const cycleTotal=isTraditionalModel()?annualBankStats(stamp.getFullYear()).total:cycleNow.cycleTotal;
+  const pct=progress.percent===null?0:Math.min(100,progress.goalArc);
   screenEl.innerHTML=`<div class="tf-home">
-    <header class="tf-intro">
-      <div><p class="tf-eyebrow">${dayLabel.toUpperCase()} ${previewMode?'· DADOS SIMULADOS':''}</p>
-        <h2>Seu tempo,<br><span>sob controle.</span></h2>
-      </div>
-      <div class="tf-sync-line"><span class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</span></div>
+    <header class="page-head">
+      <div><p class="page-kicker">${escapeHtml(dayLabel)}</p><h2>${kind}</h2></div>
+      <span class="sync-pill ${syncStatusClass()}">${syncStatusLabel()}</span>
     </header>
     ${warning}
     <div class="tf-stage-grid">
-      <section class="tf-stage" aria-labelledby="stageTitle">
+      <section class="card tf-stage" aria-labelledby="stageTitle">
         <div class="tf-stage-top">
-          <span class="tf-stage-label" id="stageTitle">${kind.toUpperCase()}</span>
-          <span class="tf-stage-index">01 / PRESENTE</span>
+          <span class="label" id="stageTitle">Agora</span>
+          <span class="tf-now-caption">${fullyMarked?'Todas as marcações registradas':open?'Jornada em andamento':'Pronto para começar'}</span>
         </div>
-        <div class="tf-datetime">
-          <div class="tf-bigclock" id="clockNow">${hm(n)}</div>
-          <div class="tf-now-caption">${fullyMarked?'Todas as marcações registradas':open?'Jornada em andamento':'Pronto para começar'}</div>
+        <div class="tf-bigclock" id="clockNow">${hm(n)}</div>
+        <div class="tf-progress ${progress.overtime?'tf-progress-overtime':''}" role="img"
+          aria-label="${progress.percent===null?'Sem carga prevista':progress.percent+'% da jornada'}${progress.overtime?', '+fmtMin(progress.extraMinutes)+' além do previsto':''}">
+          <div class="tf-progress-bar"><span style="width:${pct}%"></span></div>
+          <div class="tf-progress-meta"><span>${fmtMin(worked)} de ${fmtMin(expected)}</span>
+            <b>${progress.percent===null?'Sem meta':progress.overtime?'+'+fmtMin(progress.extraMinutes):progress.percent+'%'}</b></div>
         </div>
-        <div class="tf-stage-bottom">
-          <div class="tf-stage-action">
-            <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>
-              <span>${nextLabel}</span><span class="arrow" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></span>
-            </button>
-            <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
-            ${undoButton}
-          </div>
-          <div class="tf-progress ${progress.overtime?'tf-progress-overtime':''}"
-            style="--progress:${progress.goalArc};--overtime-progress:${progress.extraArc}"
-            role="img"
-            aria-label="${progress.percent===null
-              ?'Sem carga prevista'+(progress.overtime?', '+fmtMin(progress.extraMinutes)+' trabalhadas':'')
-              :progress.percent+'% da jornada'+(progress.overtime?', '+fmtMin(progress.extraMinutes)+' de horas extras':'')}">
-            <div class="tf-progress-inner">
-              <b>${progress.percent===null?'--':progress.percent+'%'}</b>
-              <span>${progress.overtime?'+'+fmtMin(progress.extraMinutes):progress.label}</span>
-            </div>
-          </div>
+        <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
+        <div class="tf-stage-action">
+          <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>${nextLabel}</button>
+          ${undoButton}
         </div>
       </section>
-      <section class="tf-timeline-panel" aria-label="Linha do tempo de marcações">
-        <div class="tf-panel-heading">
-          <h3>Sua jornada</h3><small>${pad(punches.length)} / ${pad(total)} MARCAÇÕES</small>
-        </div>
+      <section class="card tf-timeline-panel" aria-label="Marcações do dia">
+        <div class="tf-panel-heading"><h3>Marcações</h3><small>${punches.length} de ${total}</small></div>
         <ol class="tf-timeline-list">${timeline}</ol>
-        <div class="tf-panel-foot"><span>PRÓXIMO MARCO</span>
-          <strong>${escapeHtml(homeStatusLine(d))}</strong>
-        </div>
       </section>
     </div>
-    <section class="tf-metric-ribbon" aria-label="Indicadores de hoje">
-      <div class="tf-metric"><span>Previsto</span><strong>${fmtMin(expected)}</strong><small>Jornada contratual</small></div>
-      <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(worked)}</strong><small>Tempo computado</small></div>
-      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>0?'good':saldo<0?'bad':''):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?'Dia apurado':'Batidas ou justificativa pendentes'}</small></div>
-      <div class="tf-metric"><span>Situação</span><strong class="tf-status-text">${jornada.text}</strong><small>Com base nas batidas</small></div>
-    </section>
-    <section class="tf-history-strip" aria-label="Dia anterior">
-      <div><p class="tf-eyebrow">OLHANDO PARA ONTEM</p><strong>${brDate(priorId)} · ${priorPunches.length?`${displayPunchTime(priorPunches,0)} até ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'Sem batidas registradas'}</strong></div>
-      <div class="tf-history-value">SALDO <b>${priorBalance}</b></div>
+    <section class="tf-metric-ribbon" aria-label="Indicadores">
+      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>0?'good':saldo<0?'bad':''):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?escapeHtml(jornada.text):'Aguardando batidas'}</small></div>
+      <div class="tf-metric"><span>${isTraditionalModel()?'Banco anual':'Banco do ciclo'}</span><strong class="${cycleTotal>0?'good':cycleTotal<0?'bad':''}">${fmtMin(cycleTotal)}</strong><small>${isTraditionalModel()?stamp.getFullYear():escapeHtml(cycleNow.cycle.label)}</small></div>
+      <div class="tf-metric"><span>Ontem</span><strong>${priorBalance}</strong><small>${priorPunches.length?`${displayPunchTime(priorPunches,0)} – ${displayPunchTime(priorPunches,priorPunches.length-1)}`:brDate(priorId)}</small></div>
     </section>
   </div>`;
   const beat=document.getElementById('beatBtn');
@@ -1515,17 +1492,15 @@ function applyCommonSpreadsheetImport(parsed){
 function renderRegister(){
   if(screenEl?.dataset)screenEl.dataset.view='register';
   const date = selectedRegisterDate || iso(nowSP());
-  const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
+  const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
   screenEl.innerHTML = `
-  <section class="card register-hero">
-    <div class="section-head compact">
-      <div><h2>Registrar ponto</h2><p class="muted">Lance batidas manualmente ou importe comprovantes e planilhas.</p></div>
-    </div>
+  <header class="page-head register-hero">
+    <div><p class="page-kicker">Registrar</p><h2>Lançar ou importar batidas</h2></div>
     <div class="segmented register-tabs" id="registerSegment">
       <button class="${registerView==='manual'?'active':''}" data-view="manual">Registro manual</button>
       <button class="${registerView==='import'?'active':''}" data-view="import">Importar</button>
     </div>
-  </section>
+  </header>
   <div id="registerBody" class="register-body"></div>`;
 
   const renderManual = () => {
@@ -1550,32 +1525,27 @@ function renderRegister(){
       <div class="tf-reg-layout">
         <section class="card tf-reg-editor" aria-labelledby="registerEditorTitle">
           <div class="tf-reg-heading">
-            <div><span class="tf-reg-eyebrow">01 / LANÇAMENTO</span>
-              <h2 id="registerEditorTitle">Suas marcações</h2>
-              <p class="muted">Apenas as batidas do dia escolhido serão alteradas.</p></div>
-            <span class="tf-reg-mode">${isTribuna?'02 BATIDAS':'04 BATIDAS'}</span>
+            <div><h3 id="registerEditorTitle">Marcações do dia</h3>
+              <p class="muted">Só o dia escolhido é alterado.</p></div>
+            <span class="tf-reg-mode">${isTribuna?'2 batidas':'4 batidas'}</span>
           </div>
           <div class="tf-reg-date-card">
             <label for="regDate">Data da jornada</label>
             <input id="regDate" type="date" class="input" value="${activeDate}">
             <div class="tf-reg-date-context"><span>${weekdayName}</span><strong>${dayDescription}</strong></div>
           </div>
-          <div class="tf-reg-blockhead">
-            <div><span class="tf-reg-eyebrow">02 / HORÁRIOS</span><h3>Batidas do expediente</h3></div>
-            <span>${(d.punches||[]).length} registradas</span>
-          </div>
           <div id="regFields" class="tf-reg-times"></div>
           <div class="tf-reg-notes"><label for="note">Observação do dia</label>
             <textarea id="note" rows="3" placeholder="Opcional: ajuste, justificativa ou informação relevante">${escapeHtml(d.note||'')}</textarea></div>
           <div class="tf-reg-footer">
-            <button class="primary" id="saveReg" type="button">Salvar marcações <span aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></span></button>
+            <button class="primary" id="saveReg" type="button">Salvar marcações</button>
             <button class="secondary" id="undoRegBtn" type="button">Corrigir última batida</button>
           </div>
         </section>
         <aside class="tf-reg-sidebar" aria-label="Contexto e justificativas do dia">
           <section class="card tf-reg-context">
-            <span class="tf-reg-eyebrow">MATRIZ ORIGINAL</span>
-            <h3>${escapeHtml(model().title)}</h3>
+            <h3>Regras do dia</h3>
+            <p class="muted">${escapeHtml(model().title)}</p>
             <dl class="tf-reg-facts">
               <div><dt>Calendário</dt><dd>${escapeHtml(city)}</dd></div>
               <div><dt>Carga prevista</dt><dd>${fmtMin(scheduled)}</dd></div>
@@ -1586,7 +1556,6 @@ function renderRegister(){
             <p class="tf-reg-cloud">${escapeHtml(cloudSummary)}</p>
           </section>
           <section class="card tf-reg-leave">
-            <span class="tf-reg-eyebrow">03 / OCORRÊNCIAS</span>
             <h3>Justificar o dia</h3>
             <p class="muted">Folga Banco e Falta usam a carga prevista. Atestado não gera débito.</p>
             <div class="tf-reg-leave-actions">
@@ -1607,7 +1576,6 @@ function renderRegister(){
       const items=manualFields.map((name,i)=>{
         const kind=i===0?'entry':i===manualFields.length-1?'exit':i===1?'break':'return';
         return `<label class="tf-reg-time tf-reg-time-${kind}">
-          <span class="tf-reg-time-index">${pad(i+1)}</span>
           <span class="tf-reg-time-name">${name}</span>
           <input type="time" class="input punchInput" aria-label="${name}" value="${record.punches?.[i]?.time||''}" step="60">
         </label>`;
@@ -1936,7 +1904,8 @@ function renderMonth(){
   const saldoFonteLongo=st.officialMonth
     ? 'Saldo mensal obtido do espelho oficial importado.'
     : 'Estimativa de jornadas apuradas e ausências. Sábados passados do Hub sem batidas completas projetam −04:00 cada, ainda pendentes de conferência. Outros dias sem registro não geram débito.';
-  const rowsHtml = st.rows.map(r=>{
+  const pastRows = st.rows.filter(r=>!r.future).reverse();
+  const rowsHtml = pastRows.map(r=>{
     const p = punchesOf(state.days[r.date] || {punches:r.punches||[]});
     const objForShort = state.days[r.date] || {date:r.date,punches:r.punches||[]};
     const short = r.provisionalSaturday
@@ -1946,7 +1915,7 @@ function renderMonth(){
     const waiting=r.pending&&!r.future&&!r.provisionalSaturday;
     return `<div class="day-item ${r.future?'future-day':'clickable-day'}" ${r.future?'':`data-day="${r.date}"`}>
       <div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span>
-      <div style="display:flex;gap:8px;align-items:center">
+      <div class="day-flags">
         ${(waiting||r.provisionalSaturday)?'<span class="alert" title="Pendente de conferência">!</span>':''}
         <span class="bal ${r.future||waiting?'':r.saldo<0?'neg':r.saldo>0?'pos':''}">
           ${r.future||waiting?'--:--':fmtMin(r.saldo)}${r.provisionalSaturday?' *':''}</span></div></div>
@@ -1983,14 +1952,24 @@ function renderMonth(){
   }).join('');
   const emptyMonth=!st.rows.some(r=>r.done||r.provisionalSaturday||(r.punches||[]).length);
   const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
+  const shift=delta=>{const d=new Date(year,month+delta,1);selectedMonthValue=`${d.getFullYear()}-${pad(d.getMonth()+1)}`;renderMonth();};
+  const monthTitle=monthNames[month].charAt(0).toUpperCase()+monthNames[month].slice(1)+' '+year;
   screenEl.innerHTML = `
-  <div class="tf-section-intro">
-    <div><p class="tf-eyebrow">02 / HISTÓRICO MENSAL</p>
-      <h2>Um mês.<br><span>Todos os movimentos.</span></h2></div>
-    <p>Uma leitura visual da sua jornada, com cada dia ao alcance de um toque.</p>
-  </div>
-  <section class="tf-month-map" aria-label="Mapa dos dias do mês">
-    <div class="tf-map-heading"><h3>Mapa da jornada</h3><span>${monthNames[month]} / ${year}</span></div>
+  <header class="page-head month-head">
+    <div><p class="page-kicker">Minha jornada</p><h2>${monthTitle}</h2></div>
+    <div class="month-nav">
+      <button class="icon-btn" id="prevMonth" type="button" aria-label="Mês anterior">‹</button>
+      <input id="monthPicker" type="month" class="input" value="${value}" aria-label="Escolher mês">
+      <button class="icon-btn" id="nextMonth" type="button" aria-label="Próximo mês">›</button>
+    </div>
+  </header>
+  <section class="tf-metric-ribbon four" aria-label="Indicadores do mês">
+    <div class="tf-metric"><span>Saldo do mês</span><strong class="${st.saldo<0?'bad':st.saldo>0?'good':''}">${fmtMin(st.saldo)}</strong><small>${saldoFonte}</small></div>
+    <div class="tf-metric"><span>Trabalhado</span><strong>${fmtMin(st.trab)}</strong><small>Previsto até hoje ${fmtMin(st.prev)}</small></div>
+    <div class="tf-metric"><span>${isTraditionalModel()?'Banco anual':'Banco do ciclo'}</span><strong class="${(isTraditionalModel()?annualStats.total:st.cycleTotal)<0?'bad':'good'}">${fmtMin(isTraditionalModel()?annualStats.total:st.cycleTotal)}</strong><small>${isTraditionalModel()?year:st.cycle.label}</small></div>
+    <div class="tf-metric"><span>A conferir</span><strong class="${st.pend?'warn':''}">${st.pend}</strong><small>${st.pend===1?'dia pendente':'dias pendentes'}</small></div>
+  </section>
+  <section class="card tf-month-map" aria-label="Mapa dos dias do mês">
     <div class="tf-month-heatmap" role="group" aria-label="Calendário de ${monthNames[month]} de ${year}, de segunda a domingo">
       ${calendarHeaders}${calendarLeading}${monthMap}
     </div>
@@ -2005,14 +1984,15 @@ function renderMonth(){
       <span><i class="legend-off"></i> Folga / feriado</span>
     </div>
   </section>
-  <section class="card tf-month-summary"><div class="section-head"><div><h2>Indicadores</h2><p class="muted">Resumo executivo do período selecionado.</p></div></div><label>Mês</label><input id="monthPicker" type="month" class="input" value="${value}"><div class="kpi-strip two" style="margin-top:14px"><div class="metric"><small>Trabalhado</small><b>${fmtMin(st.trab)}</b></div><div class="metric"><small>Saldo do mês ${saldoFonte}</small><b class="${st.saldo<0?'danger':'ok'}">${fmtMin(st.saldo)}</b></div><div class="metric"><small>Dias a conferir</small><b class="warn">${st.pend}</b></div><div class="metric"><small>Previsto até hoje</small><b>${fmtMin(st.prev)}</b></div></div><p class="muted" style="margin-top:12px">${saldoFonteLongo} Sábados com −04:00 estimados: ${st.sabadosPendentes}; dias sem registro: ${st.semRegistro}; batidas incompletas: ${st.parcial}.</p></section>
+  ${st.issues.length?`<section class="card tf-issues"><h3 class="section-title">Conferir</h3>${issues}</section>`:''}
+  ${renderMonthDrawer('records', 'Dias registrados', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use Registrar para lançar batidas ou importar o espelho oficial.</span></div>' : rowsHtml, `${pastRows.length} dia${pastRows.length===1?'':'s'}`)}
   ${isTraditionalModel()
-    ? `<section class="card tf-bank-summary"><h2 class="section-title">Banco anual</h2><p class="muted">Modo Tradicional: somente dias apurados e ausências registradas; pendências não viram horas negativas.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
-    : `<section class="card tf-bank-summary"><h2 class="section-title">Banco do ciclo</h2><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
-  ${renderMonthDrawer('records', 'Registro mensal', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use a aba Registrar para lançar batidas ou importar um espelho oficial.</span></div>' : rowsHtml, `${st.rows.length} dia${st.rows.length===1?'':'s'}`)}
+    ? `<section class="card tf-bank-summary"><h3 class="section-title">Banco anual</h3><p class="muted">Modo Tradicional: somente dias apurados e ausências registradas; pendências não viram horas negativas.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
+    : `<section class="card tf-bank-summary"><h3 class="section-title">Banco do ciclo</h3><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
   ${renderMonthDiagnostic(year, month)}
-  <section class="card"><h2 class="section-title">Exportação</h2><div class="actions"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button></div><button class="primary full" id="copyReportBtn">Copiar relatório</button><button class="secondary full" id="sheetsBtn">Preparar Google Sheets</button><p class="muted">Na versão Firebase, o envio direto para Google Sheets será conectado à conta Google. Nesta versão, o botão prepara arquivo/relatório para colar ou importar.</p></section>
-  <section class="card"><h2 class="section-title">Conferência inteligente</h2>${issues}</section>`;
+  <section class="card"><h3 class="section-title">Exportar</h3><p class="muted">${escapeHtml(saldoFonteLongo)}</p><div class="actions three"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button><button class="secondary" id="copyReportBtn">Copiar relatório</button></div></section>`;
+  document.getElementById('prevMonth').onclick=()=>shift(-1);
+  document.getElementById('nextMonth').onclick=()=>shift(1);
   monthPicker.onchange = () => { selectedMonthValue = monthPicker.value; renderMonth(); };
   bindMonthDrawers();
   document.querySelectorAll('.clickable-day').forEach(item => item.onclick = () => { selectedRegisterDate = item.dataset.day; registerView = 'manual'; tab = 'register'; renderRegister(); });
@@ -2022,10 +2002,6 @@ function renderMonth(){
     const txt = reportText(year,month);
     try { await navigator.clipboard.writeText(txt); showToast('Relatório copiado.', 'ok'); }
     catch(e){ downloadBlob(`relatorio_${year}_${pad(month+1)}.txt`, txt, 'text/plain;charset=utf-8'); showToast('Relatório gerado em arquivo.', 'ok'); }
-  };
-  sheetsBtn.onclick = ()=>{
-    exportMonthCsv(year,month);
-    showToast('CSV gerado para importação no Google Sheets.', 'ok');
   };
 }
 
