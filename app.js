@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v1.8.4';
+const APP_VERSION = 'v1.9.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -38,18 +38,44 @@ const MODELS = {
   }
 };
 
-// Lista inicial 2026 para protótipo. Em produção, isso virá de publicConfig/holidays no Firebase.
-const HOLIDAYS_2026 = {
-  national: ['2026-01-01','2026-04-03','2026-04-21','2026-05-01','2026-09-07','2026-10-12','2026-11-02','2026-11-15','2026-11-20','2026-12-25'],
-  sp: ['2026-07-09'],
-  santos: ['2026-01-26','2026-09-08'],
-  praiaGrande: ['2026-01-19','2026-05-20']
+// Feriados gerados por regra para qualquer ano (antes: lista fixa só de 2026,
+// que deixava 2027 em diante sem nenhum feriado). A regra reproduz exatamente
+// a lista original de 2026. Datas móveis usam a Páscoa (algoritmo de Meeus).
+// Corpus Christi e Carnaval não entram: são ponto facultativo em Santos.
+const HOLIDAY_RULES = {
+  national: ['01-01','04-21','05-01','09-07','10-12','11-02','11-15','11-20','12-25'],
+  sp: ['07-09'],
+  santos: ['01-26','09-08'],
+  // Praia Grande: datas herdadas da versão anterior, ainda não confirmadas em fonte oficial.
+  praiaGrande: ['01-19','05-20']
 };
+// Exceções pontuais por ano: {'2027-01-01':false} remove; {'2027-06-04':true} adiciona.
+const HOLIDAY_OVERRIDES = { 'Santos':{}, 'Praia Grande':{} };
+function easterSunday(year){
+  const a=year%19,b=Math.floor(year/100),c=year%100,d=Math.floor(b/4),e=b%4;
+  const f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  const i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451);
+  const month=Math.floor((h+l-7*m+114)/31),dayOfMonth=((h+l-7*m+114)%31)+1;
+  return new Date(year,month-1,dayOfMonth);
+}
+const holidayCache = new Map();
+function holidaysForYear(year, city='Santos'){
+  const key=year+'|'+city;
+  if(holidayCache.has(key))return holidayCache.get(key);
+  const goodFriday=easterSunday(year);goodFriday.setDate(goodFriday.getDate()-2);
+  const local=city==='Santos'?HOLIDAY_RULES.santos:city==='Praia Grande'?HOLIDAY_RULES.praiaGrande:[];
+  const set=new Set([...HOLIDAY_RULES.national,...HOLIDAY_RULES.sp,...local].map(md=>`${year}-${md}`));
+  set.add(iso(goodFriday));
+  for(const [date,on] of Object.entries(HOLIDAY_OVERRIDES[city]||{})){
+    if(!date.startsWith(year+'-'))continue;
+    if(on)set.add(date);else set.delete(date);
+  }
+  holidayCache.set(key,set);
+  return set;
+}
 function isHoliday(date, city='Santos'){
-  const base = [...HOLIDAYS_2026.national, ...HOLIDAYS_2026.sp];
-  if(city === 'Santos') base.push(...HOLIDAYS_2026.santos);
-  if(city === 'Praia Grande') base.push(...HOLIDAYS_2026.praiaGrande);
-  return base.includes(date);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||'')))return false;
+  return holidaysForYear(Number(date.slice(0,4)), city).has(date);
 }
 
 
@@ -140,6 +166,26 @@ function countDayEntries(days){
 }
 
 
+// Limite do Firestore: 1 MiB por documento. Todos os dias ficam em users/{uid}/profile/main.
+const FIRESTORE_DOC_LIMIT = 1048576;
+const CLOUD_SIZE_WARN = 0.7;
+const TOMBSTONE_RETENTION_DAYS = 120;
+var cloudDocBytes = null;
+function tombstoneCutoff(){
+  const d=nowSP();d.setDate(d.getDate()-TOMBSTONE_RETENTION_DAYS);return iso(d);
+}
+function estimateDocBytes(data){
+  try{return new Blob([JSON.stringify(data)]).size;}catch(e){return JSON.stringify(data).length;}
+}
+function cloudUsageLine(){
+  if(cloudDocBytes===null)return '';
+  const pct=Math.round(cloudDocBytes/FIRESTORE_DOC_LIMIT*100);
+  const kb=Math.round(cloudDocBytes/1024);
+  const warn=cloudDocBytes>=FIRESTORE_DOC_LIMIT*CLOUD_SIZE_WARN;
+  return `<div class="row"><span>Espaço na nuvem</span><b class="${warn?'danger':'ok'}">${kb} KB de 1024 KB (${pct}%)</b></div>`
+    +(warn?'<p class="muted">O documento da nuvem está perto do limite do Firestore. Exporte um backup JSON e peça a migração dos dias para coleções separadas.</p>':'');
+}
+
 function mergeDay(localDay,cloudDay){return PontoSync.mergeDay(localDay,cloudDay,localDay?.date||cloudDay?.date);}
 function mergeDays(localDays={},cloudDays={}){return PontoSync.mergeDays(localDays,cloudDays);}
 function mergeCloudWithLocal(cloud,mode='cloud'){
@@ -148,7 +194,7 @@ function mergeCloudWithLocal(cloud,mode='cloud'){
   const localDays=local.days||{};
   // A chave de cada dia é YYYY-MM-DD: união preserva registros de TODOS os meses,
   // e PontoSync evita ressuscitar batidas removidas.
-  const days=mergeDays(localDays,cloudDays);
+  const days=PontoSync.compactTombstones(mergeDays(localDays,cloudDays),tombstoneCutoff());
   const cloudProfile=cloud?.profile&&MODELS[cloud.profile.model]?cloud.profile:null;
   // Login: configurações da nuvem prevalecem (incluindo escala 12x2/cidade).
   // Salvamento explícito: configurações que o usuário acaba de editar prevalecem.
@@ -174,7 +220,7 @@ function cloudHistorySummary(cloud){
 }
 
 function renderFallback(message='Não consegui carregar esta tela.'){
-  screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${message}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
+  screenEl.innerHTML = `<section class="card"><h2>Carregamento interrompido</h2><p class="muted">${escapeHtml(message)}</p><button class="primary full" id="fallbackReset">Resetar app local</button></section>`;
   const btn = document.getElementById('fallbackReset');
   if(btn){
     btn.onclick=()=>{
@@ -1081,7 +1127,6 @@ function parseEspelhoPontoText(text){
   const lines = normalizedText.split('\n').map(x=>x.trim()).filter(Boolean);
   const rows = [];
   const summary = { extraNormal:null, extraNoturna:null, faltaIntegral:null, saidaAntecipada:null, hrsNaoRealiz:null, saldoAnterior:null, debito:null, credito:null, saldoAtual:null, saldoAnteriorValorizado:null, saldoAtualValorizado:null, month:null };
-  const timeRe = /\b\d{1,2}:\d{2}\b/g;
   const extractedRows = extractEspelhoDailyRowsFromText(normalizedText);
   const rowSource = extractedRows.length ? extractedRows : lines;
 
@@ -1089,40 +1134,7 @@ function parseEspelhoPontoText(text){
     const line = rawLine.replace(/\s+/g,' ');
     const parsedDailyLine = parseEspelhoLine(line);
     if(parsedDailyLine){ rows.push(parsedDailyLine); continue; }
-    let m = line.match(/^(\d{2}\/\d{2}\/\d{4})\s+([A-Za-zÀ-ÿ]+)\s*(.*)$/);
-    if(m){
-      const date = brToIso(m[1]);
-      const weekday = m[2];
-      const rest = m[3] || '';
-      const upper = rest.toUpperCase();
-      const times = [...rest.matchAll(timeRe)].map(x=>x[0].padStart(5,'0'));
-      const isAusente = /AUSENTE/.test(upper);
-      const isDsr = /D\.S\.R|DSR/.test(upper);
-      const obsBits = [];
-      if(isAusente) obsBits.push('Ausente');
-      if(isDsr) obsBits.push('DSR');
-      if(/PAIXAO|PAIXÃO/.test(upper)) obsBits.push('Paixão de Cristo');
-      if(/TIRADENTES/.test(upper)) obsBits.push('Tiradentes');
 
-      // Heurística focada no espelho da Tribuna: os primeiros horários da linha são batidas.
-      // Horários no fim da linha como H.E., Absent. e Ad. Not. são durações e ficam fora das batidas.
-      let punches = [];
-      if(!isAusente && !isDsr){
-        if(times.length >= 4) punches = times.slice(0,4);
-        else if(times.length === 3) punches = times.slice(0,2); // terceiro costuma ser H.E. no espelho
-        else if(times.length === 2){
-          const a = parseHM(times[0]); const b = parseHM(times[1]);
-          if(!(b < a && ['04:00','08:00'].includes(times[1]))) punches = times.slice(0,2);
-          else punches = [times[0]];
-        } else if(times.length === 1){
-          if(!['04:00','08:00'].includes(times[0])) punches = times.slice(0,1);
-        }
-      }
-      rows.push({ date, weekday, punches, closed:isAusente, note:obsBits.join(' · '), raw:line });
-      continue;
-    }
-
-    const norm = line.toUpperCase();
     const normal = line.match(/H\.EXTRA NORMAL 100%\s+([\d,.]+)/i);
     if(normal) summary.extraNormal = parseSignedTime(normal[1]);
     const noturna = line.match(/H\.E\. NOT NORMAL 100%\s+([\d,.]+)/i);
@@ -1169,11 +1181,9 @@ function parseEspelhoPontoText(text){
       summary.credito = parseSignedTime(bankNums[3]);
       summary.saldoAtual = parseSignedTime(bankNums[4]);
       summary.saldoAtualValorizado = parseSignedTime(bankNums[5]);
-    } else {
-      const saldos = [...all.matchAll(/(-?\d+,\d{2})/g)].map(x=>parseSignedTime(x[1]));
-      const negatives = saldos.filter(x=>x<0);
-      if(negatives.length) summary.saldoAtual = negatives[negatives.length-1];
     }
+    // Sem o bloco Banco de Horas reconhecido, nenhum saldo oficial é inventado:
+    // um número qualquer do PDF não pode prevalecer sobre o cálculo do app.
   }
   if(!rows.length){
     extractEspelhoDailyRowsFromText(normalizedText).forEach(rowLine => {
@@ -1206,7 +1216,7 @@ function previewEspelhoImport(parsed){
   const sample = rows.slice(0,10).map(r=>{
     const p = adaptedPunchesForModel(r.punches);
     const line = p.length ? `${p[0]} até ${p[p.length-1]}` : (r.note || 'sem batidas');
-    return `<div class="day-item clickable-day" data-day="${r.date}"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><span>${p.length ? `${p.length} bat.` : ''}</span></div><div class="day-sub">${line}</div></div>`;
+    return `<div class="day-item clickable-day" data-day="${r.date}"><div class="day-head"><span>${brDate(r.date)} · ${r.weekday}</span><span>${p.length ? `${p.length} bat.` : ''}</span></div><div class="day-sub">${escapeHtml(line)}</div></div>`;
   }).join('');
   const extraTotal = (parsed.summary.extraNormal||0) + (parsed.summary.extraNoturna||0);
   return `<h2>Prévia do espelho</h2>
@@ -1224,13 +1234,23 @@ function previewEspelhoImport(parsed){
     <button class="primary full" id="confirmPdfImport">Confirmar importação do espelho</button>
     <p class="muted">A importação usa a primeira e a última batida para modelos Tribuna. No Tradicional, usa até quatro batidas.</p>`;
 }
+// Importações nunca apagam Folga banco, Atestado ou Falta registrados manualmente.
+// O dia com ausência é preservado e informado ao usuário para conferência.
+function importKeepsAbsence(date){ return Boolean(state.days[date]?.absenceType); }
+function reportSkippedAbsences(skipped){
+  if(!skipped.length)return;
+  const list=skipped.slice(0,5).map(brDate).join(', ')+(skipped.length>5?` e mais ${skipped.length-5}`:'');
+  showToast(`${skipped.length} dia(s) com ausência registrada foram mantidos sem alteração: ${list}. Confira manualmente.`,'warn');
+}
 function applyEspelhoImport(parsed){
+  const skipped=[];
   (parsed.rows||[]).forEach(r=>{
-    const dd = day(r.date);
+    if(importKeepsAbsence(r.date)){skipped.push(r.date);return;}
     const punches = adaptedPunchesForModel(r.punches);
-    if(punches.length)state.days[r.date]=PontoSync.replacePunches(dd,punches.map(time=>({time,source:'pdf_espelho'})));
-    if(r.closed)state.days[r.date].closed=true;
-    if(r.note) dd.note = [dd.note, r.note].filter(Boolean).join(' · ');
+    if(punches.length)state.days[r.date]=PontoSync.replacePunches(day(r.date),punches.map(time=>({time,source:'pdf_espelho'})));
+    const target=day(r.date);
+    if(r.closed)target.closed=true;
+    if(r.note && !(target.note||'').includes(r.note)) target.note = [target.note, r.note].filter(Boolean).join(' · ');
   });
   if(parsed.summary?.saldoAtual !== null && parsed.summary?.saldoAtual !== undefined){
     state.imports = state.imports || [];
@@ -1247,6 +1267,8 @@ function applyEspelhoImport(parsed){
     state.imports.push({type:'espelho_ponto', month:monthKey, createdAt:new Date().toISOString(), saldoOficial:parsed.summary.saldoAtual, extraNormal:parsed.summary.extraNormal, extraNoturna:parsed.summary.extraNoturna});
   }
   save();
+  reportSkippedAbsences(skipped);
+  return {skipped};
 }
 async function extractPdfText(file){
   if(!window.pdfjsLib) throw new Error('Leitor de PDF não carregado. Use o campo de texto ou rode com internet para carregar o PDF.js.');
@@ -1472,18 +1494,22 @@ function previewCommonSpreadsheetImport(parsed){
       <div class="kpi-mini"><span>Incompletos</span><strong class="warn">${parsed.incomplete}</strong></div>
       <div class="kpi-mini"><span>Vazios ignorados</span><strong>${parsed.empty}</strong></div>
     </div>
-    <div class="empty-state compact sheet-warning"><strong>Atenção</strong><span>Ao confirmar, as batidas existentes nos dias encontrados serão substituídas pelas batidas da planilha. Os cálculos continuam sendo feitos pelo app.</span></div>
+    <div class="empty-state compact sheet-warning"><strong>Atenção</strong><span>Ao confirmar, as batidas existentes nos dias encontrados serão substituídas pelas batidas da planilha. Dias com Folga banco, Atestado ou Falta são mantidos sem alteração. Os cálculos continuam sendo feitos pelo app.</span></div>
     <div class="preview-list">${sample}</div>
     <button class="primary full" id="confirmSheetImport">Importar batidas da planilha</button>`;
 }
 
 function applyCommonSpreadsheetImport(parsed){
+  const skipped=[];
   parsed.rows.forEach(r => {
+    if(importKeepsAbsence(r.date)){skipped.push(r.date);return;}
     const d = day(r.date);
     state.days[r.date]=PontoSync.replacePunches(d,r.punches.map(time=>({time,source:'spreadsheet_common'})));
     state.days[r.date].note=state.days[r.date].note||'';
   });
   save();
+  reportSkippedAbsences(skipped);
+  return {skipped};
 }
 
 function renderRegister(){
@@ -1621,10 +1647,10 @@ function renderRegister(){
     const body = document.getElementById('registerBody');
     body.innerHTML = `
     <section class="card import-subnav-card"><div class="segmented register-tabs import-tabs" id="importSegment"><button class="${importSubView==='receipt'?'active':''}" data-import="receipt">Comprovante</button><button class="${importSubView==='sheet'?'active':''}" data-import="sheet">Planilha</button><button class="${importSubView==='mirror'?'active':''}" data-import="mirror">Espelho</button></div></section>
-    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">ARQ</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
+    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 05/01/2026 HORA: 08:00"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">ARQ</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
     <section class="card hidden" id="foundBox"></section></div>
 
-    <div class="import-group ${importSubView==='sheet'?'':'hidden'}" data-import-group="sheet"><section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 02/02/2026\t07:31:00\t13:33:00\t14:33:00\t17:57:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
+    <div class="import-group ${importSubView==='sheet'?'':'hidden'}" data-import-group="sheet"><section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 05/01/2026\t08:00:00\t12:00:00\t13:00:00\t17:00:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
     <section class="card hidden" id="commonSheetBox"></section></div>
 
     <div class="import-group ${importSubView==='mirror'?'':'hidden'}" data-import-group="mirror"><section class="card register-panel import-panel"><div class="form-title"><h2>Espelho oficial</h2><p class="muted">Leitor focado no PDF do espelho da Tribuna.</p></div><label>PDF do espelho</label><input id="pdfEspelho" class="file-input-hidden" type="file" accept="application/pdf"><label for="pdfEspelho" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar PDF</span><span class="file-picker-sub">PDF do espelho oficial da Tribuna</span></div><span class="file-picker-icon">PDF</span></label><div id="pdfEspelhoSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="pdfEspelhoName" class="file-selected-name"></span></div><label for="pdfEspelho" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readPdfEspelho">Ler PDF do espelho</button><label>Ou colar texto extraído</label><textarea id="rawEspelho" rows="5" placeholder="Cole aqui o texto do espelho mensal."></textarea><button class="secondary full" id="parseEspelhoTextBtn">Ler texto do espelho</button></section>
@@ -1702,7 +1728,7 @@ function renderRegister(){
         if(rawEspelhoEl) rawEspelhoEl.value = text;
         handleParsedEspelho(parseEspelhoPontoText(text));
       }catch(e){
-        espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${e.message}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
+        espelhoBoxEl.className='card'; espelhoBoxEl.innerHTML=`<h2>Não consegui ler o PDF localmente</h2><p class="muted">${escapeHtml(e.message)}</p><p class="muted">Como alternativa, abra o PDF, copie o texto e cole no campo de texto do espelho.</p>`;
       }
     };
 
@@ -1758,7 +1784,7 @@ function renderRegister(){
           }
         }catch(err){
           commonSheetBoxEl.className = 'card result-card';
-          commonSheetBoxEl.innerHTML = `<h2>Não consegui ler a planilha</h2><p class="muted">${err?.message || err}</p>`;
+          commonSheetBoxEl.innerHTML = `<h2>Não consegui ler a planilha</h2><p class="muted">${escapeHtml(err?.message || err)}</p>`;
         }
       };
     }
@@ -2005,7 +2031,7 @@ function renderMonth(){
 
 
 function renderImport(){
-  screenEl.innerHTML = `<section class="card"><h2>Importar marcação</h2><p class="muted">Prévia do fluxo para comprovante TOTVS/Carol, print de e-mail ou foto do papel. Na versão Firebase, a imagem vai para Storage e uma Cloud Function chama OCR em nuvem.</p><label>Colar texto do comprovante</label><textarea id="rawImport" rows="6" placeholder="Cole aqui o texto do e-mail/comprovante. Ex: DATA: 30/04/2026 HORA: 21:23"></textarea><button class="primary" style="width:100%;margin-top:12px" id="parseText">Ler DATA e HORA</button><label>Ou selecionar imagem</label><input class="input" type="file" accept="image/*"><p class="muted">Nesta prévia, imagem fica como fluxo visual. OCR real entra na v2 Firebase.</p></section><section class="card hidden" id="foundBox"></section>`;
+  screenEl.innerHTML = `<section class="card"><h2>Importar marcação</h2><p class="muted">Prévia do fluxo para comprovante TOTVS/Carol, print de e-mail ou foto do papel. Na versão Firebase, a imagem vai para Storage e uma Cloud Function chama OCR em nuvem.</p><label>Colar texto do comprovante</label><textarea id="rawImport" rows="6" placeholder="Cole aqui o texto do e-mail/comprovante. Ex: DATA: 05/01/2026 HORA: 08:00"></textarea><button class="primary" style="width:100%;margin-top:12px" id="parseText">Ler DATA e HORA</button><label>Ou selecionar imagem</label><input class="input" type="file" accept="image/*"><p class="muted">Nesta prévia, imagem fica como fluxo visual. OCR real entra na v2 Firebase.</p></section><section class="card hidden" id="foundBox"></section>`;
   parseText.onclick = () => {
     const text = rawImport.value;
     const m1 = text.match(/DATA[:\s]*(\d{2}\/\d{2}\/\d{4})[\s\S]*?HORA[:\s]*(\d{2}:\d{2})/i) || text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})/);
@@ -2025,12 +2051,13 @@ function renderProfileScreen(){
 
   screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
   <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>
+  ${!previewMode?cloudUsageLine():''}
   ${!previewMode&&cloudHistoryStats?'<p class="muted">Histórico encontrado na nuvem: '+cloudHistoryStats.days+' dias distribuídos por '+cloudHistoryStats.months+' meses; '+cloudHistoryStats.officialMonths+' meses de banco oficial. Esses dados são conciliados com os registros locais.</p>':''}${previewMode
   ? '<p class="muted">Modo de demonstração. Não lê nem escreve no Firebase. Os dados são de teste.</p>'
   : `${cloudLastError ? `<p class="muted">Último erro: ${escapeHtml(cloudLastError)}</p>` : ""}<button class="secondary full" id="syncNow">Enviar para a nuvem</button><button class="secondary full" id="pullCloud">Conciliar dados da nuvem</button>`}
   <button class="secondary full" id="disconnectGoogle">${previewMode?'Sair da demonstração':'Desconectar conta Google'}</button></section>
   <section class="card"><h2 class="section-title">Jornada</h2><label>Modelo</label><select id="cfgModel">${Object.entries(MODELS).map(([k,m])=>`<option value="${k}" ${currentModel===k?'selected':''}>${m.title}</option>`).join('')}</select><label>Cidade</label><select id="cfgCity"><option ${currentCity==='Santos'?'selected':''}>Santos</option><option ${currentCity==='Praia Grande'?'selected':''}>Praia Grande</option></select><label>Saldo inicial do ciclo</label><input id="cfgBank" class="input" type="text" value="${currentBank}"><div id="scaleWrap"></div><button class="primary full" id="saveCfg">Salvar configurações</button></section>
-  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Exporte seus registros antes de importar ou apagar dados.</p><button class="secondary full" id="backupAll">Baixar backup JSON</button><p class="muted">O reset limpa apenas o navegador desta conta.</p><button class="secondary full" id="reset">Resetar dados locais</button></section>`;
+  <section class="card"><h2 class="section-title">Dados</h2><p class="muted">Exporte seus registros antes de importar ou apagar dados.</p><button class="secondary full" id="backupAll">Baixar backup JSON</button><p class="muted">O reset limpa apenas o navegador desta conta.</p><button class="secondary full" id="reset">Resetar dados locais</button>${previewMode?'':'<p class="muted">Apagar da nuvem remove o documento do Firestore e os dados deste navegador. Outros aparelhos ainda logados podem reenviar a cópia local deles: desconecte-os antes.</p><button class="secondary full danger" id="deleteCloud">Apagar meus dados da nuvem</button>'}</section>`;
 
   const cfgModelEl = document.getElementById('cfgModel');
   const cfgCityEl = document.getElementById('cfgCity');
@@ -2078,6 +2105,15 @@ function renderProfileScreen(){
     const ok = await pushStateToCloud(true);
     showToast(ok ? 'Dados enviados para a nuvem.' : `Não foi possível enviar: ${cloudLastError || 'erro desconhecido'}`, ok ? 'ok' : 'warn');
     renderProfileScreen();
+  };
+
+  if(!previewMode)document.getElementById('deleteCloud').onclick = async () => {
+    if(!confirm('Apagar TODOS os seus registros de ponto da nuvem e deste navegador? Baixe o backup JSON antes. Esta ação não pode ser desfeita.'))return;
+    const typed=prompt('Para confirmar, digite APAGAR');
+    if(typed!=='APAGAR'){showToast('Exclusão cancelada.','warn');return;}
+    const ok=await deleteCloudData();
+    showToast(ok?'Dados apagados da nuvem e deste navegador.':`Não foi possível apagar: ${cloudLastError||'erro desconhecido'}`,ok?'ok':'warn');
+    if(ok){tab='home';render();}else renderProfileScreen();
   };
 
   if(!previewMode)document.getElementById('pullCloud').onclick = async () => {
@@ -2166,6 +2202,7 @@ async function hydrateFromCloud(mode='smart'){
     const snap=await firestoreFns.getDoc(ref);
     if(snap.exists()){
       const cloud=snap.data()||{};
+      cloudDocBytes=estimateDocBytes(cloud);
       // Cópia de segurança local do documento remoto ANTES da conciliação,
       // com chave separada por UID. Falhas de quota não bloqueiam o login.
       try{
@@ -2227,6 +2264,9 @@ async function pushStateToCloud(immediate=false){
       const merged=await firestoreFns.runTransaction(firebaseDb,async tx=>{
         const snap=await tx.get(ref);
         const result=snap.exists()?mergeCloudWithLocal(snap.data()||{},'push'):stateForCloud();
+        const bytes=estimateDocBytes(result);
+        cloudDocBytes=bytes;
+        if(bytes>FIRESTORE_DOC_LIMIT-20000)throw new Error(`Documento com ${Math.round(bytes/1024)} KB, acima do limite do Firestore. Exporte o backup JSON antes de continuar.`);
         tx.set(ref,{...result,userMeta:{
           name:state.user?.name||'',email:state.user?.email||'',photoURL:state.user?.photoURL||''
         },updatedAt:firestoreFns.serverTimestamp()},{merge:true});
@@ -2250,6 +2290,29 @@ async function pushStateToCloud(immediate=false){
   clearTimeout(cloudSyncTimer);
   cloudSyncTimer = setTimeout(doPush, 700);
   return true;
+}
+
+async function deleteCloudData(){
+  if(previewMode||!state.user?.uid)return false;
+  try{
+    if(!firebaseReady&&!(await initFirebaseAuth()))throw new Error('Firebase não iniciou.');
+    const ref=await cloudDocRef();
+    if(!ref)throw new Error('Referência Firestore não criada.');
+    clearTimeout(cloudSyncTimer);
+    const uid=state.user.uid;
+    await firestoreFns.deleteDoc(ref);
+    localStorage.removeItem(storageKey(uid));
+    localStorage.removeItem(STORAGE_KEY+':cloud-original:'+uid);
+    const signedUser=state.user;
+    state=freshState();state.user=signedUser;
+    cloudHistoryStats={days:0,months:0,officialMonths:0};
+    cloudDocBytes=0;cloudLastError='';
+    return true;
+  }catch(err){
+    console.warn('Falha ao apagar dados da nuvem:',err);
+    cloudLastError=err?.message||String(err);
+    return false;
+  }
 }
 
 async function pullStateFromCloud(){

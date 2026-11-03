@@ -31,20 +31,18 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Testar cálculos e ausências
-        run: node --test tests/absence-bank.test.cjs tests/progress.test.cjs
+      - name: Testar cálculos, ausências, importações e feriados
+        run: node --test tests/*.test.cjs
 
       - name: Preparar arquivos estáticos
         run: |
           mkdir -p public
-          cp index.html preview.html style.css theme-v1.6.css \
-             timeflow-v1.7.css timeflow-map-v1.7.css \
-             timeflow-black-gold-v1.8.css \
-             app.js sync-core.js firebase-config.js manifest.json icon.svg \
-             public/
+          cp index.html preview.html manifest.json icon.svg *.css *.js public/
           touch public/.nojekyll
-          test -s public/index.html
-          test -s public/app.js
+          # Falha o deploy se a página referenciar um arquivo local que não foi copiado.
+          for ref in $(grep -oE '(href|src)="[^"]+"' index.html | sed -E 's/^(href|src)="//; s/"$//' | grep -vE '^(https?:)?//'); do
+            test -s "public/$ref" || { echo "Arquivo referenciado e ausente: $ref"; exit 1; }
+          done
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
