@@ -994,8 +994,8 @@ function renderHome(){
   const priorBalance=pendingSaturdayDebit(yd)
     ?fmtMin(priorImpact.saldo)+' (estimado)'
     :complete(yd)?fmtMin(priorImpact.saldo):'Sem registro';
-  const undoButton=punches.length
-    ? '<button class="secondary" id="undoLastBtn" type="button">Corrigir última batida</button>':'';
+  const undoButton=`<button class="round-btn round-gray" id="undoLastBtn" type="button" ${punches.length?'':'disabled'} aria-label="Corrigir última batida">Corrigir</button>`;
+  const roundLabel=fullyMarked?'Feito':labels[Math.min(punches.length,labels.length-1)];
   const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
   const kind=date!==iso(n)?'Jornada anterior em andamento':'Jornada de hoje';
   const warning=overdue?`<div class="tf-alert" role="alert">
@@ -1024,10 +1024,11 @@ function renderHome(){
           <div class="tf-progress-meta"><span>${fmtMin(worked)} de ${fmtMin(expected)}</span>
             <b>${progress.percent===null?'Sem meta':progress.overtime?'+'+fmtMin(progress.extraMinutes):progress.percent+'%'}</b></div>
         </div>
-        <p class="tf-stage-help" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
+        <p class="tf-stage-help sr-only" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
         <div class="tf-stage-action">
-          <button type="button" class="cta" id="beatBtn" ${fullyMarked?'disabled':''}>${nextLabel}</button>
           ${undoButton}
+          <span class="round-caption">${escapeHtml(homeStatusLine(d))}</span>
+          <button type="button" class="round-btn round-orange cta" id="beatBtn" ${fullyMarked?'disabled':''} aria-label="${nextLabel}">${roundLabel}</button>
         </div>
       </section>
       <section class="card tf-timeline-panel" aria-label="Marcações do dia">

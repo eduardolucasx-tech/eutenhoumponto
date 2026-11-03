@@ -9,3 +9,4 @@
 - Ao trocar de aba, a tela volta ao topo (antes herdava a rolagem da aba anterior).
 - Ícone do app atualizado.
 - Limite técnico: a refração real do Liquid Glass não existe no Safari; o efeito é vidro fosco com brilho de borda.
+- Inspiração Relógio/Calculadora: relógio em dígitos finos direto sobre o preto; botões redondos com anel duplo como no cronômetro (cinza "Corrigir", laranja para a próxima batida); marcações listadas como voltas; botões secundários cinza-escuro como as teclas da calculadora.

@@ -372,4 +372,44 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 @media (min-width:760px){
   .tf-day-pixel{aspect-ratio:auto;height:58px;border-radius:14px}
 }
+
+/* ——— Inspiração Relógio / Calculadora ——— */
+.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Palco do relógio: sem cartão, dígitos finos direto sobre o preto */
+.tf-stage{background:none!important;border:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;padding:8px 4px 4px}
+.tf-stage-top .label{font-weight:500;color:var(--muted)}
+.tf-bigclock{font:200 92px/1 var(--font);letter-spacing:-.04em;text-align:center;margin:6px 0 4px;
+  text-shadow:0 0 40px rgba(255,159,10,.18)}
+.tf-progress-meta{font-size:15px}
+/* Botões redondos com anel duplo, como no cronômetro */
+.tf-stage-action{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:8px}
+.round-btn{width:84px;height:84px;border-radius:50%;border:0;display:grid;place-items:center;padding:0;
+  font:500 16px var(--font);letter-spacing:-.01em;min-height:0;
+  box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px currentColor;transition:transform .12s,filter .2s}
+.round-btn:active{transform:scale(.94);filter:brightness(1.25)}
+.round-gray{background:#333336;color:#FFFFFF;box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px #333336}
+.round-orange{background:var(--accent);color:var(--accent-ink);
+  box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px var(--accent),0 8px 30px var(--glow)}
+.round-orange:hover{background:var(--accent-hover)}
+.round-btn:disabled{opacity:.35;box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px #333336}
+.round-orange:disabled{background:#333336;color:var(--muted)}
+.round-caption{text-align:center;font-size:15px;color:var(--muted);line-height:1.3}
+/* Lista de marcações como as voltas do cronômetro */
+.tf-timeline-panel{background:none!important;border:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;padding:0 4px}
+.tf-timeline-step{border-bottom:.5px solid var(--line);min-height:46px}
+.tf-timeline-step:first-child{border-top:.5px solid var(--line)}
+.tf-timeline-time{font-size:17px;font-variant-numeric:tabular-nums}
+/* Teclas da calculadora: cinza-escuro com texto branco */
+.secondary{background:#333336;color:#FFFFFF}
+.secondary:hover{background:#3F3F43}
+.segmented{background:#1C1C1E}
+.icon-btn{background:#333336;color:#FFFFFF}
+.tf-reg-leave-actions .secondary{background:#333336}
+.tf-metric strong,.kpi-mini strong,.metric b{font-family:var(--font);font-weight:300;font-size:30px;letter-spacing:-.03em}
+@media (min-width:760px){
+  .tf-bigclock{font-size:120px;text-align:left}
+  .round-btn{width:92px;height:92px}
+}
+@media (max-width:420px){.tf-bigclock{font-size:84px}}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
