@@ -1,13 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Eu tenho um ponto, Black and Gold">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Eu tenho um ponto">
 <defs>
-  <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#f1d69b"/>
-    <stop offset=".55" stop-color="#dfbd75"/>
-    <stop offset="1" stop-color="#a88748"/>
+  <radialGradient id="glow" cx=".75" cy=".15" r=".9">
+    <stop offset="0" stop-color="#FF9F0A" stop-opacity=".55"/>
+    <stop offset=".6" stop-color="#FF7A00" stop-opacity=".08"/>
+    <stop offset="1" stop-color="#000" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#FFC266"/>
+    <stop offset="1" stop-color="#FF8A00"/>
   </linearGradient>
 </defs>
-<rect width="512" height="512" rx="114" fill="#0b0b0d"/>
-<rect x="41" y="41" width="430" height="430" rx="88" fill="#161618" stroke="#54442b" stroke-width="5"/>
-<path d="M98 405H415" stroke="#8f7240" stroke-width="2" opacity=".52"/>
-<text x="108" y="358" fill="url(#gold)" font-family="Arial, Helvetica, sans-serif" font-size="307" font-weight="bold" letter-spacing="-30">e.</text>
+<rect width="512" height="512" rx="112" fill="#0A0A0B"/>
+<rect width="512" height="512" rx="112" fill="url(#glow)"/>
+<text x="232" y="338" text-anchor="middle" font-family="-apple-system,'SF Pro Rounded',Helvetica,Arial,sans-serif" font-weight="700" font-size="260" fill="url(#ink)">e</text>
+<circle cx="372" cy="318" r="30" fill="#FF9F0A"/>
 </svg>

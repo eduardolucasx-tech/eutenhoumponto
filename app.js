@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v2.0.0';
+const APP_VERSION = 'v2.1.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -819,6 +819,7 @@ function goHome(){
 
 function goProfile(){
   if(!state.profile) return;
+  window.scrollTo(0,0);
   tab = 'config';
   document.querySelectorAll('.bottom-nav button').forEach((button) => {
     button.classList.toggle('active', button.dataset.tab === 'config' || button.dataset.tab === 'profile');
@@ -835,7 +836,7 @@ function render(){
       button.classList.toggle('active', btnTab === currentTab || ((btnTab === 'config' || btnTab === 'profile') && (currentTab === 'config' || currentTab === 'profile')));
     });
     const badge = document.getElementById('modelBadge');
-    if(badge) badge.textContent = state.profile ? `${APP_VERSION} · ${model().title}` : APP_VERSION;
+    if(badge) badge.textContent = state.profile ? model().title : 'Eu tenho um ponto';
     renderHeaderProfile();
     const bottomNav = document.getElementById('bottomNav');
     if(bottomNav) bottomNav.classList.toggle('hidden', !state.profile);
@@ -1495,7 +1496,7 @@ function renderRegister(){
   const manualFields = model().punchMode === 'autoLunch' ? ['Entrada','Saída'] : ['Entrada','Saída almoço','Volta almoço','Saída'];
   screenEl.innerHTML = `
   <header class="page-head register-hero">
-    <div><p class="page-kicker">Registrar</p><h2>Lançar ou importar batidas</h2></div>
+    <div><p class="page-kicker">Lançar ou importar batidas</p><h2>Registrar</h2></div>
     <div class="segmented register-tabs" id="registerSegment">
       <button class="${registerView==='manual'?'active':''}" data-view="manual">Registro manual</button>
       <button class="${registerView==='import'?'active':''}" data-view="import">Importar</button>
@@ -2025,7 +2026,7 @@ function renderProfileScreen(){
   const currentCity = state.profile?.city || (MODELS[currentModel]?.city || 'Santos');
   const currentBank = fmtMin(Number(state.profile?.bankStart) || 0);
 
-  screenEl.innerHTML = `<section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
+  screenEl.innerHTML = `<header class="page-head"><div><p class="page-kicker">Conta, jornada e dados</p><h2>Ajustes</h2></div></header><section class="card"><div class="profile-card"><div class="profile-photo">${userPhotoHtml('large')}</div><div><h2 style="margin:0">Perfil</h2><p class="muted" style="margin:4px 0 0">${escapeHtml(state.user?.name || 'Usuário Google')}<br>${escapeHtml(state.user?.email || '')}</p><p class="muted" style="margin:6px 0 0">Versão ${APP_VERSION}</p></div></div></section>
   <section class="card"><h2 class="section-title">Conta</h2><div class="row"><span>Sincronização</span><b class="${syncStatusClass()}">${syncStatusLabel()}</b></div>
   ${!previewMode?cloudUsageLine():''}
   ${!previewMode&&cloudHistoryStats?'<p class="muted">Histórico encontrado na nuvem: '+cloudHistoryStats.days+' dias distribuídos por '+cloudHistoryStats.months+' meses; '+cloudHistoryStats.officialMonths+' meses de banco oficial. Esses dados são conciliados com os registros locais.</p>':''}${previewMode
@@ -2137,6 +2138,7 @@ function bindBottomNav(){
       }
       tab = nextTab;
       render();
+      window.scrollTo(0,0);
     };
   });
 }
