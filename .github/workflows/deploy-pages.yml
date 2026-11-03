@@ -40,7 +40,7 @@ jobs:
           cp index.html preview.html manifest.json icon.svg *.css *.js public/
           touch public/.nojekyll
           # Falha o deploy se a página referenciar um arquivo local que não foi copiado.
-          for ref in $(grep -oE '(href|src)="[^"]+"' index.html | sed -E 's/^(href|src)="//; s/"$//' | grep -vE '^(https?:)?//'); do
+          for ref in $(grep -oE '(href|src)="[^"]+"' index.html | sed -E 's/^(href|src)="//; s/"$//; s/\?.*$//' | grep -vE '^(https?:)?//'); do
             test -s "public/$ref" || { echo "Arquivo referenciado e ausente: $ref"; exit 1; }
           done
 
