@@ -17,7 +17,7 @@ function makeEnv({online=true}={}){
   };
   const caches={
     open:async()=>cache,
-    keys:async()=>['ponto-v2.2.0','ponto-v2.3.0','outro-cache'],
+    keys:async()=>['ponto-v2.3.0','ponto-v2.3.1','outro-cache'],
     delete:async()=>true,
     match:async(r,opts={})=>{
       let k=key(r);
@@ -57,8 +57,8 @@ test('página abre do cache quando offline',async()=>{
 test('arquivos com versão na URL saem do cache sem ir à rede',async()=>{
   const env=makeEnv();
   await new Promise(r=>env.handlers.install({waitUntil:p=>p.then(r)}));
-  const res=await env.request('https://app.test/app.js?v=2.3.0');
-  assert.equal(res.body,'core:app.js?v=2.3.0');
+  const res=await env.request('https://app.test/app.js?v=2.3.1');
+  assert.equal(res.body,'core:app.js?v=2.3.1');
   assert.equal(env.fetched.length,0);
 });
 

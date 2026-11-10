@@ -53,7 +53,7 @@
     return {removed,day:{...d,punches:d.punches.slice(0,-1),
       deletedPunchIds:uniq([...d.deletedPunchIds,removed.id])}};
   }
-  const absenceNames={banco:'Folga banco',atestado:'Atestado',falta:'Falta'};
+  const absenceNames={banco:'Folga banco',atestado:'Atestado',falta:'Falta',viagem:'Diária viagem'};
   function setAbsence(original,type){
     const d=normalizeDay(original,original?.date);
     if(!d)throw Error('Dia não identificado.');
