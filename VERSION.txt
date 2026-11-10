@@ -1,2 +1,1 @@
-v2.2.0
-Build: Mais leve e mais rápido; vidro só na navegação; cache offline
+v2.3.0
