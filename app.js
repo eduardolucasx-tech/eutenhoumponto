@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v2.1.1';
+const APP_VERSION = 'v2.2.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -244,19 +244,38 @@ function ensureToastHost(){
   }
   return host;
 }
-function showToast(message, type='info'){
+function showToast(message, type='info', options={}){
   const host = ensureToastHost();
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.textContent = message;
-  host.appendChild(toast);
-  requestAnimationFrame(()=> toast.classList.add('show'));
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = message;
+  toast.appendChild(text);
+  let removed = false;
   const remove = () => {
+    if(removed) return;
+    removed = true;
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 220);
   };
-  setTimeout(remove, 2600);
+  // v2.2.0: aviso pode ter uma ação (ex.: "Desfazer" logo depois de bater ponto)
+  if(options.action && typeof options.action.run === 'function'){
+    toast.classList.add('has-action');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = options.action.label || 'Desfazer';
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); remove(); options.action.run(); });
+    toast.appendChild(btn);
+  }
+  host.appendChild(toast);
+  requestAnimationFrame(()=> toast.classList.add('show'));
+  setTimeout(remove, options.duration || (options.action ? 5000 : 2600));
   toast.addEventListener('click', remove);
+}
+function haptic(pattern=30){
+  try{ if(typeof navigator!=='undefined' && navigator.vibrate) navigator.vibrate(pattern); }catch(e){}
 }
 function syncStatusLabel(){
   if(previewMode)return 'Prévia local · sem nuvem';
@@ -277,6 +296,24 @@ let registerView = 'manual';
 let importSubView = 'sheet';
 let monthDrawers = { records:true, diagnostic:false };
 let selectedRegisterDate = null;
+// v2.2.0: atalho do ícone (manifest shortcuts) abre index.html?acao=bater
+let pendingAction = new URLSearchParams(window.location.search).get('acao');
+function runPendingAction(){
+  if(pendingAction!=='bater')return false;
+  if(!state.user||!state.profile)return false;
+  // Na conta Google, só bate depois de baixar os dados da nuvem (ou se a nuvem falhou e o app está no local).
+  const ready=previewMode||cloudLoadedForUid===state.user.uid||(!cloudHydrating&&!!cloudLastError);
+  if(!ready)return false;
+  pendingAction=null;
+  try{
+    const q=new URLSearchParams(window.location.search);q.delete('acao');
+    const rest=q.toString();
+    window.history.replaceState(null,'',window.location.pathname+(rest?'?'+rest:''));
+  }catch(e){}
+  tab='home';
+  addPunch(activeWorkDate(),hm(nowSP()),'shortcut');
+  return true;
+}
 const screenEl = document.getElementById('screen');
 function freshState(){return {user:null,profile:null,days:{},imports:[],officialBank:{},clientModifiedAt:null};}
 function storageKey(uid){return STORAGE_KEY+':'+uid;}
@@ -408,6 +445,93 @@ function targetDateForImportedPunch(foundDate, foundTime){
     if(isOpenShift(state.days[prevId])) return prevId;
   }
   return foundDate;
+}
+
+// v2.2.0: vários comprovantes de uma vez (texto do e-mail "Carol: Comprovante Clock-In",
+// copiado no iPhone com Texto ao Vivo). Só lê DATA, HORA e NSR; ignora nome, CPF e o resto.
+const RECEIPT_TOLERANCE_MIN = 10;
+function parseReceiptsText(text){
+  const src = String(text || '');
+  const found = [];
+  const re = /DATA[:\s]*(\d{2})\/(\d{2})\/(\d{4})[\s\S]{0,40}?HORA[:\s]*(\d{1,2}):(\d{2})/gi;
+  let m, lastEnd = 0;
+  while((m = re.exec(src))){
+    const before = src.slice(lastEnd, m.index);
+    const nsrMatch = before.match(/NSR[:\s]*(\d+)(?![\s\S]*NSR)/i);
+    found.push({date:`${m[3]}-${m[2]}-${m[1]}`, time:`${pad(Number(m[4]))}:${m[5]}`, nsr:nsrMatch?nsrMatch[1]:''});
+    lastEnd = re.lastIndex;
+  }
+  if(!found.length){
+    const loose = /(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})/g;
+    while((m = loose.exec(src))) found.push({date:`${m[3]}-${m[2]}-${m[1]}`, time:`${pad(Number(m[4]))}:${m[5]}`, nsr:''});
+  }
+  const seen = new Set();
+  return found
+    .filter(r => { const ok = Number(r.time.slice(0,2)) < 24 && !seen.has(r.date+' '+r.time); seen.add(r.date+' '+r.time); return ok; })
+    .sort((a,b) => (a.date+a.time).localeCompare(b.date+b.time));
+}
+function compareReceiptsWithApp(receipts){
+  // Simula a inclusão em ordem para resolver madrugadas e lotação do dia como o app faria.
+  const sim = JSON.parse(JSON.stringify(state.days || {}));
+  const realDays = state.days;
+  const out = [];
+  try{
+    state.days = sim;
+    for(const r of receipts){
+      const target = targetDateForImportedPunch(r.date, r.time);
+      const d = sim[target] || {date:target, punches:[]};
+      const punches = punchesOf(d);
+      const rMin = parseHM(r.time);
+      let nearest = null;
+      for(const p of punches){
+        let diff = parseHM(p.time) - rMin;
+        if(diff > 720) diff -= 1440; if(diff < -720) diff += 1440;
+        if(nearest === null || Math.abs(diff) < Math.abs(nearest.diff)) nearest = {time:p.time, diff};
+      }
+      let status;
+      if(d.absenceType) status = 'blocked';
+      else if(nearest && nearest.diff === 0) status = 'match';
+      else if(nearest && Math.abs(nearest.diff) <= RECEIPT_TOLERANCE_MIN) status = 'diff';
+      else if(punches.length >= requiredPunches()) status = 'full';
+      else status = 'missing';
+      out.push({...r, target, status, appTime: nearest?.time || '', diff: nearest?.diff || 0});
+      if(status === 'missing') sim[target] = PontoSync.addPunch(d, r.time, 'import_receipt');
+    }
+  }finally{ state.days = realDays; }
+  return out;
+}
+function applyMissingReceipts(compared){
+  let added = 0;
+  for(const r of compared){
+    if(r.status !== 'missing') continue;
+    const d = day(r.target);
+    if(d.absenceType || d.punches.length >= requiredPunches() || d.punches.find(p => p.time === r.time)) continue;
+    state.days[r.target] = PontoSync.addPunch(d, r.time, 'import_receipt');
+    added++;
+  }
+  if(added) save();
+  return added;
+}
+function receiptsReportHtml(compared){
+  const count = s => compared.filter(r => r.status === s).length;
+  const missing = count('missing');
+  const label = {match:'Confere', diff:'Diferença', missing:'Falta no app', full:'Dia já completo', blocked:'Dia com ausência'};
+  const cls = {match:'ok', diff:'warn', missing:'info', full:'danger', blocked:'danger'};
+  const rows = compared.map(r => {
+    const detail = r.status === 'diff'
+      ? `App ${r.appTime} · empresa ${r.time} · app ${Math.abs(r.diff)} min ${r.diff<0?'antes':'depois'}`
+      : r.status === 'match' ? `${r.time} nos dois`
+      : r.status === 'missing' ? `Empresa ${r.time} · não está no app`
+      : r.status === 'full' ? `Empresa ${r.time} · o app já tem todas as batidas`
+      : `Empresa ${r.time} · dia marcado como ausência`;
+    return `<li class="receipt-row receipt-${r.status}"><div><b>${brDate(r.target)}</b><small>${detail}${r.nsr?` · NSR ${r.nsr}`:''}</small></div><span class="receipt-tag ${cls[r.status]}">${label[r.status]}</span></li>`;
+  }).join('');
+  const words = {match:['confere','conferem'], diff:['com diferença','com diferença'], missing:['falta no app','faltam no app'], full:['sem espaço','sem espaço'], blocked:['em dia de ausência','em dia de ausência']};
+  const summary = Object.keys(words).filter(s => count(s)).map(s => `${count(s)} ${words[s][count(s)>1?1:0]}`).join(' · ');
+  return `<h2>${compared.length} comprovante${compared.length>1?'s':''}</h2><p class="muted">${summary}</p>
+    <ol class="receipt-list">${rows}</ol>
+    ${missing?`<button class="primary full" id="confirmReceipts">Adicionar ${missing} que falta${missing>1?'m':''} no app</button>`:'<p class="muted">Nada para adicionar.</p>'}
+    ${count('diff')?'<p class="muted small-note">Diferenças não são alteradas sozinhas: corrija na aba Registrar se o horário da empresa for o certo.</p>':''}`;
 }
 
 function addMinutesToTime(time, minutes){
@@ -781,7 +905,19 @@ function addPunch(date,time,source='manual'){
   catch(err){showToast(err.message,'warn');return;}
   save();
   const idx=state.days[date].punches.length-1;
-  showToast(`${labelForIndex(Math.min(idx, requiredPunches()-1))} registrada às ${time}.`, 'ok');
+  const msg=`${labelForIndex(Math.min(idx, requiredPunches()-1))} registrada às ${time}.`;
+  if(source==='button'||source==='shortcut'){
+    // Batida feita agora: vibra e oferece desfazer por 5 s (remove só se ainda for a última).
+    haptic(30);
+    const addedId=state.days[date].punches[idx]?.id;
+    showToast(msg,'ok',{action:{label:'Desfazer',run:()=>{
+      const last=state.days[date]?.punches?.[state.days[date].punches.length-1];
+      if(last&&last.id===addedId)undoLastPunch(date);
+      else showToast('Essa batida já não é a última. Use Corrigir na aba Registrar.','warn');
+    }}});
+  }else{
+    showToast(msg,'ok');
+  }
 }
 function labelForIndex(i){ return model()?.punchMode === 'autoLunch' ? ['Entrada','Saída final de expediente'][i] : ['Entrada','Saída almoço','Volta almoço','Saída'][i]; }
 function punchCards(dayObj){
@@ -842,6 +978,7 @@ function render(){
     if(bottomNav) bottomNav.classList.toggle('hidden', !state.profile);
     if(!state.user) return renderLogin();
     if(!state.profile) return renderModelChoice();
+    if(pendingAction && runPendingAction()) return;
     if(currentTab === 'config' || currentTab === 'profile') return renderProfileScreen();
     if(currentTab === 'register') return renderRegister();
     if(currentTab === 'month') return renderMonth();
@@ -991,10 +1128,25 @@ function renderHome(){
   const yd=state.days[priorId]||{date:priorId,punches:[]};
   const priorPunches=punchesOf(yd);
   const priorImpact=estimatedBankImpact(yd);
-  const priorBalance=pendingSaturdayDebit(yd)
-    ?fmtMin(priorImpact.saldo)+' (estimado)'
-    :complete(yd)?fmtMin(priorImpact.saldo):'Sem registro';
-  const undoButton=`<button class="round-btn round-gray" id="undoLastBtn" type="button" ${punches.length?'':'disabled'} aria-label="Corrigir última batida">Corrigir</button>`;
+  const priorEstimated=pendingSaturdayDebit(yd);
+  const priorHasBalance=priorEstimated||complete(yd);
+  const priorBalance=priorHasBalance?fmtMin(priorImpact.saldo):'--:--';
+  const priorRange=priorPunches.length?`${displayPunchTime(priorPunches,0)} – ${displayPunchTime(priorPunches,priorPunches.length-1)}`:'';
+  const priorNote=priorEstimated?`Estimado${priorRange?' · '+priorRange:''}`:priorRange||`Sem registro · ${brDate(priorId).slice(0,5)}`;
+  // v2.2.0: com a jornada aberta, o card mostra quanto falta e a saída prevista (só exibição; o saldo oficial continua igual).
+  const plannedExit=(homeStatusLine(d).match(/Final de expediente: (\d{2}:\d{2})/)||[])[1]||'';
+  let dayMetric;
+  if(saldoApurado){
+    dayMetric=`<div class="tf-metric"><span>Saldo do dia</span><strong class="${saldo>0?'good':saldo<0?'bad':''}">${fmtMin(saldo)}</strong><small>${escapeHtml(jornada.text)}</small></div>`;
+  }else if(open && expected>0 && !d.absenceType){
+    const remaining=expected-worked;
+    dayMetric=remaining>0
+      ?`<div class="tf-metric tf-metric-live"><span>Falta para fechar</span><strong id="dayRemaining">${fmtMin(remaining)}</strong><small>${plannedExit?'Saída prevista '+plannedExit:'Jornada em andamento'}</small></div>`
+      :`<div class="tf-metric tf-metric-live"><span>Além da jornada</span><strong class="good" id="dayRemaining">+${fmtMin(-remaining)}</strong><small>${plannedExit?'Saída prevista era '+plannedExit:'Hora extra em andamento'}</small></div>`;
+  }else{
+    dayMetric=`<div class="tf-metric"><span>Saldo do dia</span><strong>--:--</strong><small>${punches.length?'Aguardando batidas':'Aguardando entrada'}</small></div>`;
+  }
+  const undoButton=`<button class="dock-undo" id="undoLastBtn" type="button" ${punches.length?'':'disabled'} aria-label="Corrigir última batida"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><span>Corrigir</span></button>`;
   const roundLabel=fullyMarked?'Feito':labels[Math.min(punches.length,labels.length-1)];
   const dayLabel=`${weekFull[stamp.getDay()]} · ${pad(stamp.getDate())} ${monthNames[stamp.getMonth()]} ${stamp.getFullYear()}`;
   const kind=date!==iso(n)?'Jornada anterior em andamento':'Jornada de hoje';
@@ -1024,11 +1176,13 @@ function renderHome(){
           <div class="tf-progress-meta"><span>${fmtMin(worked)} de ${fmtMin(expected)}</span>
             <b>${progress.percent===null?'Sem meta':progress.overtime?'+'+fmtMin(progress.extraMinutes):progress.percent+'%'}</b></div>
         </div>
-        <p class="tf-stage-help sr-only" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
-        <div class="tf-stage-action">
+        <p class="tf-stage-status" id="homeStatus">${escapeHtml(homeStatusLine(d))}</p>
+        <div class="tf-action-dock" role="group" aria-label="Bater ponto">
           ${undoButton}
-          <span class="round-caption">${escapeHtml(homeStatusLine(d))}</span>
-          <button type="button" class="round-btn round-orange cta" id="beatBtn" ${fullyMarked?'disabled':''} aria-label="${nextLabel}">${roundLabel}</button>
+          <button type="button" class="dock-main cta" id="beatBtn" ${fullyMarked?'disabled':''} aria-label="${nextLabel}">
+            <span class="dock-main-copy"><small>${fullyMarked?'Jornada':'Registrar'}</small><strong>${fullyMarked?'Completa':roundLabel}</strong></span>
+            <span class="dock-main-time" id="dockTime">${hm(n)}</span>
+          </button>
         </div>
       </section>
       <section class="card tf-timeline-panel" aria-label="Marcações do dia">
@@ -1037,9 +1191,9 @@ function renderHome(){
       </section>
     </div>
     <section class="tf-metric-ribbon" aria-label="Indicadores">
-      <div class="tf-metric"><span>Saldo do dia</span><strong class="${saldoApurado?(saldo>0?'good':saldo<0?'bad':''):''}">${saldoApurado?fmtMin(saldo):'--:--'}</strong><small>${saldoApurado?escapeHtml(jornada.text):'Aguardando batidas'}</small></div>
+      ${dayMetric}
       <div class="tf-metric"><span>${isTraditionalModel()?'Banco anual':'Banco do ciclo'}</span><strong class="${cycleTotal>0?'good':cycleTotal<0?'bad':''}">${fmtMin(cycleTotal)}</strong><small>${isTraditionalModel()?stamp.getFullYear():escapeHtml(cycleNow.cycle.label)}</small></div>
-      <div class="tf-metric"><span>Ontem</span><strong>${priorBalance}</strong><small>${priorPunches.length?`${displayPunchTime(priorPunches,0)} – ${displayPunchTime(priorPunches,priorPunches.length-1)}`:brDate(priorId)}</small></div>
+      <div class="tf-metric"><span>Ontem</span><strong class="${priorHasBalance?(priorImpact.saldo>0?'good':priorImpact.saldo<0?'bad':''):''}">${priorBalance}</strong><small>${priorNote}</small></div>
     </section>
   </div>`;
   const beat=document.getElementById('beatBtn');
@@ -1249,7 +1403,24 @@ function applyEspelhoImport(parsed){
   reportSkippedAbsences(skipped);
   return {skipped};
 }
+// v2.2.0: o PDF.js (~300 KB) só é baixado quando alguém importa um espelho em PDF.
+const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+let pdfJsLoading = null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(!pdfJsLoading){
+    pdfJsLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = PDFJS_URL;
+      script.onload = () => resolve(window.pdfjsLib);
+      script.onerror = () => { pdfJsLoading = null; reject(new Error('Leitor de PDF não carregado. Use o campo de texto ou rode com internet para carregar o PDF.js.')); };
+      document.head.appendChild(script);
+    });
+  }
+  return pdfJsLoading;
+}
 async function extractPdfText(file){
+  await loadPdfJs();
   if(!window.pdfjsLib) throw new Error('Leitor de PDF não carregado. Use o campo de texto ou rode com internet para carregar o PDF.js.');
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const data = new Uint8Array(await file.arrayBuffer());
@@ -1617,7 +1788,7 @@ function renderRegister(){
     const body = document.getElementById('registerBody');
     body.innerHTML = `
     <section class="card import-subnav-card"><div class="segmented register-tabs import-tabs" id="importSegment"><button class="${importSubView==='receipt'?'active':''}" data-import="receipt">Comprovante</button><button class="${importSubView==='sheet'?'active':''}" data-import="sheet">Planilha</button><button class="${importSubView==='mirror'?'active':''}" data-import="mirror">Espelho</button></div></section>
-    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovante individual</h2><p class="muted">Use para e-mail, comprovante digital ou papel. O app procura DATA e HORA.</p></div><label>Texto do comprovante</label><textarea id="rawImport" rows="4" placeholder="Ex.: DATA: 05/01/2026 HORA: 08:00"></textarea><button class="secondary full" id="parseText">Ler DATA e HORA</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">ARQ</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">OCR por imagem será ligado em nuvem. Por enquanto, use o texto extraído ou digitado.</p></section>
+    <div class="import-group ${importSubView==='receipt'?'':'hidden'}" data-import-group="receipt"><section class="card register-panel import-panel"><div class="form-title"><h2>Comprovantes</h2><p class="muted">Cole um ou vários comprovantes do e-mail "Carol: Comprovante Clock-In". O app confere cada um com o que você registrou.</p></div><label>Texto dos comprovantes</label><textarea id="rawImport" rows="6" placeholder="Ex.: NSR: 69975 … DATA: 09/11/2026 HORA: 19:23"></textarea><p class="muted small-note">No iPhone: toque e segure no quadro verde do e-mail, escolha "Copiar texto" e cole aqui. Pode juntar vários.</p><button class="secondary full" id="parseText">Conferir comprovantes</button><div class="divider"></div><label>Imagem do comprovante</label><input id="proofImage" class="file-input-hidden" type="file" accept="image/*"><label for="proofImage" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar imagem</span><span class="file-picker-sub">Print ou foto do comprovante</span></div><span class="file-picker-icon">ARQ</span></label><div id="proofImageSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="proofImageName" class="file-selected-name"></span></div><label for="proofImage" class="file-change-btn">Trocar arquivo</label></div><p class="muted small-note">Ler direto da imagem ainda não funciona. No iPhone, use "Copiar texto" na imagem do e-mail e cole no campo acima.</p></section>
     <section class="card hidden" id="foundBox"></section></div>
 
     <div class="import-group ${importSubView==='sheet'?'':'hidden'}" data-import-group="sheet"><section class="card register-panel import-panel"><div class="form-title"><h2>Planilha comum</h2><p class="muted">Importa apenas Data, Entrada, Saída almoço, Volta almoço e Saída final.</p></div><label>Colar texto da planilha</label><textarea id="rawCommonSheet" rows="6" placeholder="Cole aqui linhas copiadas do Google Sheets ou Excel. Ex.: 05/01/2026\t08:00:00\t12:00:00\t13:00:00\t17:00:00"></textarea><button class="secondary full" id="readCommonSheetText">Ler texto colado</button><div class="divider"></div><label>Ou enviar arquivo</label><input id="commonSheet" class="file-input-hidden" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"><label for="commonSheet" class="file-picker compact-picker"><div class="file-picker-copy"><span class="file-picker-title">Selecionar planilha</span><span class="file-picker-sub">XLSX, XLS ou CSV comum</span></div><span class="file-picker-icon">XLS</span></label><div id="commonSheetSelected" class="file-selected hidden"><div class="file-selected-copy"><span class="file-selected-label">Arquivo selecionado</span><span id="commonSheetName" class="file-selected-name"></span></div><label for="commonSheet" class="file-change-btn">Trocar arquivo</label></div><button class="secondary full" id="readCommonSheet">Ler arquivo da planilha</button></section>
@@ -1665,6 +1836,20 @@ function renderRegister(){
 
     if(parseTextBtn) parseTextBtn.onclick = () => {
       const text = rawImportEl?.value || '';
+      const receipts = parseReceiptsText(text);
+      if(receipts.length > 1 || (receipts.length === 1 && /NSR/i.test(text))){
+        const compared = compareReceiptsWithApp(receipts);
+        foundBoxEl.className = 'card result-card';
+        foundBoxEl.innerHTML = receiptsReportHtml(compared);
+        foundBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
+        const confirmReceiptsBtn = document.getElementById('confirmReceipts');
+        if(confirmReceiptsBtn) confirmReceiptsBtn.onclick = () => {
+          const added = applyMissingReceipts(compared);
+          showToast(added ? `${added} batida${added>1?'s':''} da empresa adicionada${added>1?'s':''}.` : 'Nada novo para adicionar.', added ? 'ok' : 'warn');
+          tab = 'month'; render();
+        };
+        return;
+      }
       const m1 = text.match(/DATA[:\s]*(\d{2}\/\d{2}\/\d{4})[\s\S]*?HORA[:\s]*(\d{2}:\d{2})/i) || text.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})/);
       if(!m1){ foundBoxEl.className='card'; foundBoxEl.innerHTML='<h2>Nada encontrado</h2><p class="muted">Não consegui localizar DATA e HORA nesse texto.</p>'; return; }
       const [dd,mm,yyyy] = m1[1].split('/'); const foundDate = `${yyyy}-${mm}-${dd}`; const foundTime = m1[2];
@@ -2149,8 +2334,18 @@ setInterval(() => {
   if(state.profile && tab === 'home'){
     const el = document.getElementById('clockNow');
     if(el) el.textContent = hm(nowSP());
+    const dock = document.getElementById('dockTime');
+    if(dock) dock.textContent = hm(nowSP());
+    // v2.2.0: a cada minuto novo, redesenha a tela Hoje para "Falta para fechar" e o progresso acompanharem.
+    const minuteNow = hm(nowSP());
+    if(window.__lastHomeMinute && window.__lastHomeMinute !== minuteNow && document.getElementById('dayRemaining') && !document.querySelector('.toast.has-action')) render();
+    window.__lastHomeMinute = minuteNow;
   }
 }, 1000);
+
+if(typeof navigator!=='undefined' && 'serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(err=>console.warn('Cache offline indisponível:',err));});
+}
 
 if(previewMode)startPreview();
 else initFirebaseAuth()

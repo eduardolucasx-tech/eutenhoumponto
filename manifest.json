@@ -3,8 +3,8 @@
   "short_name": "Meu Ponto",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#0B0B12",
+  "theme_color": "#0B0B12",
   "icons": [
     {
       "src": "icon.svg",
@@ -12,5 +12,20 @@
       "type": "image/svg+xml"
     }
   ],
-  "description": "Seu controle de ponto pessoal."
+  "description": "Seu controle de ponto pessoal.",
+  "shortcuts": [
+    {
+      "name": "Bater ponto agora",
+      "short_name": "Bater ponto",
+      "description": "Registra a próxima marcação com a hora atual",
+      "url": "./index.html?acao=bater",
+      "icons": [
+        {
+          "src": "icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
 }

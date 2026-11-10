@@ -1,2 +1,2 @@
-v2.0.0
-Build: Visual claro e minimalista com tema escuro automático; folha de estilo única
+v2.2.0
+Build: Mais leve e mais rápido; vidro só na navegação; cache offline
