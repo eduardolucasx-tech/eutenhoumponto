@@ -1,10 +1,10 @@
-/* Eu tenho um ponto · service worker v2.3.0
+/* Eu tenho um ponto · service worker v2.3.1
    - Página (index.html): rede primeiro, cache só se estiver offline. Assim o app nunca fica preso numa versão velha.
    - Arquivos com versão na URL (app.js?v=…, app.css?v=…) e bibliotecas com versão fixa
      (Firebase 10.12.5, PDF.js 3.11.174, XLSX 0.18.5): cache primeiro, porque nunca mudam.
    - Nada de Firestore/Auth: chamadas de dados não passam pelo cache. */
-const CACHE = 'ponto-v2.3.0';
-const CORE = ['./', 'index.html', 'app.css?v=2.3.0', 'app.js?v=2.3.0', 'sync-core.js?v=2.3.0', 'firebase-config.js?v=2.3.0', 'manifest.json', 'icon.svg'];
+const CACHE = 'ponto-v2.3.1';
+const CORE = ['./', 'index.html', 'app.css?v=2.3.1', 'app.js?v=2.3.1', 'sync-core.js?v=2.3.1', 'firebase-config.js?v=2.3.1', 'manifest.json', 'icon.svg'];
 const IMMUTABLE_HOSTS = ['https://www.gstatic.com/firebasejs/', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/', 'https://cdn.jsdelivr.net/npm/xlsx@'];
 
 self.addEventListener('install', (event) => {

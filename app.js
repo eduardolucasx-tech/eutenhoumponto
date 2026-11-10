@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v2.3.0';
+const APP_VERSION = 'v2.3.1';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -647,6 +647,7 @@ function jornadaStatus(dayObj, partial=false){
   if(dayObj?.absenceType === 'banco') return { text:'Folga banco', cls:'warn' };
   if(dayObj?.absenceType === 'atestado') return { text:'Atestado', cls:'neutral' };
   if(dayObj?.absenceType === 'falta') return { text:'Falta', cls:'danger' };
+  if(dayObj?.absenceType === 'viagem') return { text:'Diária viagem', cls:'warn' };
   if(pendingSaturdayDebit(dayObj))return {text:'Sábado · -04:00 a conferir',cls:'warn'};
   if(isPending(dayObj))return {text:(dayObj.punches||[]).length?'Batidas incompletas':'Sem registro',cls:'warn'};
   const exp = expectedMinutes(dayObj.date);
@@ -661,8 +662,10 @@ function tribunaLikeModel(){
   return ['tribuna_hub_prog','tribuna_jornalismo'].includes(state.profile?.model);
 }
 
+// v2.3.1: Diária viagem desconta sempre 8 horas do banco, qualquer que seja a jornada do dia.
+const DIARIA_VIAGEM_MIN = 480;
 function absenceLabel(type){
-  return ({ banco:'Folga banco', atestado:'Atestado', falta:'Falta' })[type] || '';
+  return ({ banco:'Folga banco', atestado:'Atestado', falta:'Falta', viagem:'Diária viagem' })[type] || '';
 }
 function setDayAbsence(date,type){
   const d=day(date);
@@ -670,7 +673,7 @@ function setDayAbsence(date,type){
   catch(err){showToast(err.message||'Falha ao registrar ausência.','warn');return;}
   save();
   const exp=expectedMinutes(date);
-  const message=exp===0&&type!=='atestado'
+  const message=exp===0&&type!=='atestado'&&type!=='viagem'
     ? `${absenceLabel(type)} registrada em ${brDate(date)}. Carga prevista 00:00; sem débito.`
     : `${absenceLabel(type)} registrada em ${brDate(date)}.`;
   showToast(message,type==='atestado'?'ok':'warn');
@@ -689,6 +692,7 @@ function dayAbsenceImpact(dayObj){
   if(type === 'atestado') return { debit:0, credit:0, saldo:0, source:'absence_atestado' };
   if(type === 'banco') return { debit:exp, credit:0, saldo:-exp, source:'absence_banco' };
   if(type === 'falta') return { debit:exp, credit:0, saldo:-exp, source:'absence_falta' };
+  if(type === 'viagem') return { debit:DIARIA_VIAGEM_MIN, credit:0, saldo:-DIARIA_VIAGEM_MIN, source:'absence_viagem' };
   return null;
 }
 
@@ -792,10 +796,23 @@ function dayContribution(obj){
   const i = estimatedBankImpact(obj);
   return {saldo:i.saldo, debit:i.debit, credit:i.credit};
 }
+// v2.3.1: espelho importado antes da v2.3.0 não tem retrato. Mesmo assim, uma ausência
+// (Falta, Folga banco, Diária viagem…) lançada por cima das batidas do espelho é uma edição
+// posterior: o retrato do dia vem das batidas guardadas no backup da ausência.
+function legacyAbsenceSnapshot(key){
+  const map = {};
+  for(const [date, d] of Object.entries(state.days || {})){
+    if(date.slice(0,7) !== key || !d?.absenceType) continue;
+    const backup = Array.isArray(d.absenceBackup?.punches) ? d.absenceBackup.punches : [];
+    if(backup.some(p => p?.source !== 'pdf_espelho')) continue;
+    map[date] = backup.map(p => p.time).join(',');
+  }
+  return map;
+}
 function espelhoSnapshot(firstKey, lastKey){
   const map = {};
   Object.keys(state.officialBank || {}).filter(k => k >= firstKey && k <= lastKey).sort()
-    .forEach(k => Object.assign(map, state.officialBank[k]?.espelhoDays || {}));
+    .forEach(k => Object.assign(map, state.officialBank[k]?.espelhoDays || legacyAbsenceSnapshot(k)));
   return map;
 }
 function editsAfterOfficial(fromDate, toDate, lastKey){
@@ -1804,11 +1821,12 @@ function renderRegister(){
           </section>
           <section class="card tf-reg-leave">
             <h3>Justificar o dia</h3>
-            <p class="muted">Folga Banco e Falta usam a carga prevista. Atestado não gera débito.</p>
+            <p class="muted">Folga Banco e Falta usam a carga prevista. Diária viagem desconta 08:00. Atestado não gera débito.</p>
             <div class="tf-reg-leave-actions">
               <button class="secondary tf-reg-bank" id="bankDayBtn" type="button">Folga Banco</button>
               <button class="secondary tf-reg-medical" id="medicalDayBtn" type="button">Atestado</button>
               <button class="secondary tf-reg-fault" id="faultDayBtn" type="button">Falta</button>
+              <button class="secondary tf-reg-trip" id="tripDayBtn" type="button">Diária viagem</button>
             </div>
             <button class="secondary tf-reg-clear" id="clearAbsenceBtn" type="button">Remover justificativa</button>
           </section>
@@ -1855,6 +1873,7 @@ function renderRegister(){
     document.getElementById('bankDayBtn').onclick=()=>setDayAbsence(dateEl.value,'banco');
     document.getElementById('medicalDayBtn').onclick=()=>setDayAbsence(dateEl.value,'atestado');
     document.getElementById('faultDayBtn').onclick=()=>setDayAbsence(dateEl.value,'falta');
+    document.getElementById('tripDayBtn').onclick=()=>setDayAbsence(dateEl.value,'viagem');
     document.getElementById('clearAbsenceBtn').onclick=()=>clearDayAbsence(dateEl.value);
   };
 
@@ -2199,6 +2218,7 @@ function renderMonth(){
       :r.absenceType==='atestado'?'medical'
       :r.absenceType==='banco'?'bank'
       :r.absenceType==='falta'?'absence'
+      :r.absenceType==='viagem'?'bank'
       :r.provisionalSaturday?'saturday-provisional'
       :r.expected===0&&!(r.punches||[]).length?'off'
       :!(r.punches||[]).length?'empty'

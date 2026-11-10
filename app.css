@@ -327,11 +327,12 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 .tf-reg-facts dt{color:var(--text)}
 .tf-reg-facts dd{margin:0;color:var(--muted);text-align:right}
 .tf-reg-note,.tf-reg-cloud{font-size:13px;color:var(--muted);margin-top:10px}
-.tf-reg-leave-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.tf-reg-leave-actions{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
 .tf-reg-leave-actions .secondary{padding:0 8px;font-size:15px;min-height:44px}
 .tf-reg-medical{color:var(--info)!important}
 .tf-reg-fault{color:var(--bad)!important}
 .tf-reg-bank{color:var(--bank)!important}
+.tf-reg-trip{color:var(--warn)!important}
 .tf-reg-clear{width:100%;margin-top:8px;min-height:44px;font-size:15px;color:var(--muted)!important;background:none!important}
 .import-subnav-card{padding:0;background:none}
 
