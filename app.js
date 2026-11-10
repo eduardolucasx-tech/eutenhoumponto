@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v2.2.0';
+const APP_VERSION = 'v2.3.0';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -774,6 +774,49 @@ function localSaldoAfterOfficial(cycle, official, year, month){
   }
   return saldo;
 }
+// v2.3.0: a última edição vale. Ao importar o espelho, o app guarda um retrato de cada dia
+// do mês (batidas ou ausência). Se o dia for editado depois, a diferença entre a edição e o
+// retrato entra no saldo do mês e no banco, por cima do saldo oficial. Importar de novo
+// o espelho tira um novo retrato.
+function daySignature(dayObj){
+  if(!dayObj) return '';
+  if(dayObj.absenceType) return '!'+dayObj.absenceType;
+  return punchesOf(dayObj).map(p=>p.time).join(',');
+}
+function dayFromSignature(date, sig){
+  if(sig && sig.startsWith('!')) return {date, punches:[], absenceType:sig.slice(1)};
+  return {date, punches: sig ? sig.split(',').map((time,i)=>({id:'snap'+i, time})) : []};
+}
+function dayContribution(obj){
+  if(!(complete(obj)||pendingSaturdayDebit(obj))) return {saldo:0, debit:0, credit:0};
+  const i = estimatedBankImpact(obj);
+  return {saldo:i.saldo, debit:i.debit, credit:i.credit};
+}
+function espelhoSnapshot(firstKey, lastKey){
+  const map = {};
+  Object.keys(state.officialBank || {}).filter(k => k >= firstKey && k <= lastKey).sort()
+    .forEach(k => Object.assign(map, state.officialBank[k]?.espelhoDays || {}));
+  return map;
+}
+function editsAfterOfficial(fromDate, toDate, lastKey){
+  const snap = espelhoSnapshot(fromDate.slice(0,7), lastKey);
+  const out = {saldo:0, debit:0, credit:0, dates:[]};
+  for(const [date, sig] of Object.entries(snap)){
+    if(date < fromDate || date > toDate) continue;
+    const cur = state.days[date] || {date, punches:[]};
+    if(daySignature(cur) === sig) continue;
+    const a = dayContribution(cur), b = dayContribution(dayFromSignature(date, sig));
+    if(a.saldo === b.saldo && a.debit === b.debit && a.credit === b.credit) continue;
+    out.saldo += a.saldo - b.saldo; out.debit += a.debit - b.debit; out.credit += a.credit - b.credit;
+    out.dates.push(date);
+  }
+  out.dates.sort();
+  return out;
+}
+function legacyOfficialKeys(cycle, lastKey){
+  return Object.keys(state.officialBank || {})
+    .filter(k => k >= cycle.start.slice(0,7) && k <= lastKey && !state.officialBank[k]?.espelhoDays).sort();
+}
 function cycleConfirmedSaldo(cycle, selectedYear, selectedMonth){
   const now = nowSP();
   const start = dateObj(cycle.start);
@@ -836,15 +879,24 @@ function monthStats(year, month){
   const officialBank = findLatestOfficialBank(cycle, year, month);
   const officialMonth = officialMonthSaldo(year, month);
   const localAfterOfficial = localSaldoAfterOfficial(cycle, officialBank, year, month);
-  const cycleSaldo = officialBank ? localAfterOfficial : cycleConfirmedSaldo(cycle, year, month);
+  const cycleEdits = officialBank
+    ? editsAfterOfficial(cycle.start, iso(monthEndDateFromKey(officialBank.key)), officialBank.key)
+    : {saldo:0, debit:0, credit:0, dates:[]};
+  const legacyOfficial = officialBank ? legacyOfficialKeys(cycle, officialBank.key) : [];
+  const cycleSaldo = officialBank ? localAfterOfficial + cycleEdits.saldo : cycleConfirmedSaldo(cycle, year, month);
   const cycleBase = officialBank ? officialBank.saldoAtual : (Number(state.profile.bankStart)||0);
   const cycleTotal = cycleBase + cycleSaldo;
-  const monthSaldo = officialMonth ? officialMonth.saldo : saldoConfirmado+saldoProvisionadoSabados;
-  const monthDebit = officialMonth ? officialMonth.debit : debitEstimated;
-  const monthCredit = officialMonth ? officialMonth.credit : creditEstimated;
+  const monthKey = `${year}-${pad(month+1)}`;
+  const monthEdits = officialMonth
+    ? editsAfterOfficial(`${monthKey}-01`, iso(last), monthKey)
+    : {saldo:0, debit:0, credit:0, dates:[]};
+  const monthSaldo = officialMonth ? officialMonth.saldo + monthEdits.saldo : saldoConfirmado+saldoProvisionadoSabados;
+  const monthDebit = officialMonth ? officialMonth.debit + monthEdits.debit : debitEstimated;
+  const monthCredit = officialMonth ? officialMonth.credit + monthEdits.credit : creditEstimated;
   return {prev,trab,saldo:monthSaldo,saldoEstimado:saldoConfirmado+saldoProvisionadoSabados,
     saldoConfirmado,saldoProvisionadoSabados,sabadosPendentes,debitEstimated,creditEstimated,
-    monthDebit,monthCredit,officialMonth,cycleSaldo,cycleTotal,cycleBase,officialBank,
+    monthDebit,monthCredit,officialMonth,monthEdits,cycleEdits,legacyOfficial,localAfterOfficial,
+    cycleSaldo,cycleTotal,cycleBase,officialBank,
     pend,semRegistro,parcial,cravada,superior,incompleta,rows,issues,cycle};
 }
 function escapeCsv(v){
@@ -1375,10 +1427,26 @@ function reportSkippedAbsences(skipped){
   const list=skipped.slice(0,5).map(brDate).join(', ')+(skipped.length>5?` e mais ${skipped.length-5}`:'');
   showToast(`${skipped.length} dia(s) com ausência registrada foram mantidos sem alteração: ${list}. Confira manualmente.`,'warn');
 }
+// v2.3.0: ao importar de novo o espelho de um mês, os dias que você editou depois da
+// importação anterior são mantidos (a sua edição é a mais recente) e passam a contar
+// como diferença sobre o saldo oficial.
+function editedAfterImport(date, importedAt){
+  const d = state.days[date];
+  if(!d || d.absenceType) return false;
+  return punchesOf(d).some(p => p.source !== 'pdf_espelho' && String(p.createdAt||'') > String(importedAt||''));
+}
 function applyEspelhoImport(parsed){
-  const skipped=[];
+  const skipped=[], kept=[], espelhoSigs={};
+  const rowsMonth = parsed.summary?.month || ((parsed.rows||[])[0]?.date || iso(nowSP())).slice(0,7);
+  const previous = state.officialBank?.[rowsMonth];
   (parsed.rows||[]).forEach(r=>{
     if(importKeepsAbsence(r.date)){skipped.push(r.date);return;}
+    const espelhoPunches = adaptedPunchesForModel(r.punches);
+    if(previous && editedAfterImport(r.date, previous.importedAt)){
+      kept.push(r.date);
+      espelhoSigs[r.date] = espelhoPunches.length ? espelhoPunches.join(',') : daySignature(state.days[r.date]);
+      return;
+    }
     const punches = adaptedPunchesForModel(r.punches);
     if(punches.length)state.days[r.date]=PontoSync.replacePunches(day(r.date),punches.map(time=>({time,source:'pdf_espelho'})));
     const target=day(r.date);
@@ -1389,8 +1457,14 @@ function applyEspelhoImport(parsed){
     state.imports = state.imports || [];
     state.officialBank = state.officialBank || {};
     const monthKey = parsed.summary.month || ((parsed.rows||[])[0]?.date || iso(nowSP())).slice(0,7);
+    const espelhoDays = {};
+    const [ky, km] = monthKey.split('-').map(Number);
+    const covered = new Set((parsed.rows||[]).map(r => r.date));
+    for(let n = 1; n <= new Date(ky, km, 0).getDate(); n++) covered.add(`${monthKey}-${pad(n)}`);
+    covered.forEach(date => { espelhoDays[date] = espelhoSigs[date] ?? daySignature(state.days[date]); });
     state.officialBank[monthKey] = {
       month: monthKey,
+      espelhoDays,
       saldoAnterior: parsed.summary.saldoAnterior,
       debito: parsed.summary.debito ?? parsed.summary.hrsNaoRealiz ?? 0,
       credito: parsed.summary.credito ?? ((parsed.summary.extraNormal||0)+(parsed.summary.extraNoturna||0)),
@@ -1401,7 +1475,7 @@ function applyEspelhoImport(parsed){
   }
   save();
   reportSkippedAbsences(skipped);
-  return {skipped};
+  return {skipped, kept};
 }
 // v2.2.0: o PDF.js (~300 KB) só é baixado quando alguém importa um espelho em PDF.
 const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -1871,7 +1945,7 @@ function renderRegister(){
       espelhoBoxEl.className='card result-card'; espelhoBoxEl.innerHTML = previewEspelhoImport(parsed);
       espelhoBoxEl.scrollIntoView({behavior:'smooth', block:'nearest'});
       const confirmPdfImportBtn = document.getElementById('confirmPdfImport');
-      if(confirmPdfImportBtn) confirmPdfImportBtn.onclick = () => { applyEspelhoImport(parsed); showToast('Espelho importado com sucesso.', 'ok'); tab='month'; render(); };
+      if(confirmPdfImportBtn) confirmPdfImportBtn.onclick = () => { const res = applyEspelhoImport(parsed); showToast(res.kept?.length ? `Espelho importado. ${res.kept.length} dia(s) que você editou depois foram mantidos e contam no banco.` : 'Espelho importado com sucesso.', 'ok'); tab='month'; render(); };
     };
     if(parseEspelhoTextBtnEl) parseEspelhoTextBtnEl.onclick = () => handleParsedEspelho(parseEspelhoPontoText(rawEspelhoEl?.value || ''));
     if(readPdfEspelhoBtn) readPdfEspelhoBtn.onclick = async () => {
@@ -2087,7 +2161,7 @@ function renderMonth(){
   const month = Number(monthStr) - 1;
   const st = monthStats(year, month);
   const annualStats = annualBankStats(year);
-  const saldoFonte = st.officialMonth ? 'oficial' : 'estimado';
+  const saldoFonte = st.officialMonth ? (st.monthEdits.dates.length ? 'oficial + suas edições' : 'oficial') : 'estimado';
   const saldoFonteLongo=st.officialMonth
     ? 'Saldo mensal obtido do espelho oficial importado.'
     : 'Estimativa de jornadas apuradas e ausências. Sábados passados do Hub sem batidas completas projetam −04:00 cada, ainda pendentes de conferência. Outros dias sem registro não geram débito.';
@@ -2109,7 +2183,7 @@ function renderMonth(){
       <div class="day-sub">${r.future?'Dia futuro':short}</div></div>`;
   }).join('');
   const bankBody = st.officialBank ?
-    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.cycleSaldo<0?'danger':'ok'}">${fmtMin(st.cycleSaldo)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
+    `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Último mês oficial</span><strong>${st.officialBank.key.split('-').reverse().join('/')}</strong></div><div class="kpi-mini"><span>Saldo oficial importado</span><strong class="${st.officialBank.saldoAtual<0?'danger':'ok'}">${fmtMin(st.officialBank.saldoAtual)}</strong></div><div class="kpi-mini"><span>Movimentação após oficial</span><strong class="${st.localAfterOfficial<0?'danger':'ok'}">${fmtMin(st.localAfterOfficial)}</strong></div>${st.cycleEdits.dates.length?`<div class="kpi-mini"><span>Suas edições depois do espelho</span><strong class="${st.cycleEdits.saldo<0?'danger':'ok'}">${fmtMin(st.cycleEdits.saldo)}</strong></div>`:''}<div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>` :
     `<div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(st.cycle.start)} a ${brDate(st.cycle.end)}</strong></div><div class="kpi-mini"><span>Saldo inicial</span><strong>${fmtMin(Number(state.profile.bankStart)||0)}</strong></div><div class="kpi-mini"><span>Débito do mês</span><strong class="danger">${fmtMin(st.monthDebit)}</strong></div><div class="kpi-mini"><span>Crédito do mês</span><strong class="ok">${fmtMin(st.monthCredit)}</strong></div><div class="kpi-mini"><span>Total do ciclo</span><strong class="${st.cycleTotal<0?'danger':'ok'}">${fmtMin(st.cycleTotal)}</strong></div></div>`;
   const calendarOffset=(new Date(year,month,1).getDay()+6)%7;
   const weekdayHeader=['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo'];
@@ -2175,7 +2249,7 @@ function renderMonth(){
   ${renderMonthDrawer('records', 'Dias registrados', emptyMonth ? '<div class="empty-state"><strong>Sem marcações neste mês</strong><span>Use Registrar para lançar batidas ou importar o espelho oficial.</span></div>' : rowsHtml, `${pastRows.length} dia${pastRows.length===1?'':'s'}`)}
   ${isTraditionalModel()
     ? `<section class="card tf-bank-summary"><h3 class="section-title">Banco anual</h3><p class="muted">Modo Tradicional: somente dias apurados e ausências registradas; pendências não viram horas negativas.</p><div class="kpi-strip two"><div class="kpi-mini"><span>Período</span><strong>${brDate(annualStats.start)} a ${brDate(annualStats.end)}</strong></div><div class="kpi-mini"><span>Horas positivas</span><strong class="ok">${fmtMin(annualStats.positive)}</strong></div><div class="kpi-mini"><span>Horas negativas</span><strong class="danger">${fmtMin(annualStats.negative)}</strong></div><div class="kpi-mini"><span>Saldo anual</span><strong class="${annualStats.total<0?'danger':'ok'}">${fmtMin(annualStats.total)}</strong></div><div class="kpi-mini"><span>Dias considerados</span><strong>${annualStats.consideredDays}</strong></div><div class="kpi-mini"><span>Pendências</span><strong class="warn">${annualStats.pendingDays}</strong></div></div></section>`
-    : `<section class="card tf-bank-summary"><h3 class="section-title">Banco do ciclo</h3><p class="muted">${st.officialBank ? 'O espelho oficial mais recente foi usado como base do ciclo.' : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${bankBody}</section>`}
+    : `<section class="card tf-bank-summary"><h3 class="section-title">Banco do ciclo</h3><p class="muted">${st.officialBank ? `O espelho oficial mais recente foi usado como base do ciclo. Vale a última edição: dia que você corrigir depois de importar o espelho conta com o seu horário.${st.cycleEdits.dates.length?` Dias editados: ${st.cycleEdits.dates.map(brDate).join(', ')}.`:''}` : 'Sem espelho oficial importado para este recorte. O ciclo está sendo estimado.'}</p>${st.legacyOfficial?.length?`<p class="muted small-note">O espelho de ${st.legacyOfficial.map(k=>k.split('-').reverse().join('/')).join(', ')} foi importado antes dessa regra. Importe-o de novo para que as edições nesses dias contem (os dias que você editou são mantidos).</p>`:''}${bankBody}</section>`}
   ${renderMonthDiagnostic(year, month)}
   <section class="card"><h3 class="section-title">Exportar</h3><p class="muted">${escapeHtml(saldoFonteLongo)}</p><div class="actions three"><button class="secondary" id="csvBtn">CSV</button><button class="secondary" id="excelBtn">Excel</button><button class="secondary" id="copyReportBtn">Copiar relatório</button></div></section>`;
   document.getElementById('prevMonth').onclick=()=>shift(-1);
