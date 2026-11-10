@@ -1,48 +1,46 @@
-/* Eu tenho um ponto · v2.1.0 — estilo iOS (Liquid Glass), escuro com laranja
-   Vidro só na camada de navegação (barra de abas, barra superior, menu lateral,
-   avisos), como a Apple orienta. Conteúdo opaco em listas agrupadas.
-   Fonte nativa do sistema: SF Pro no iPhone/Mac, com fallback nos demais. */
+/* Eu tenho um ponto · v2.2.0 — tema MODERNO ESCURO
+   Regras e tokens documentados em DESIGN.md (ler antes de mexer no visual).
+   Vidro só na camada de navegação (abas, barra superior, menu lateral, avisos);
+   conteúdo em cards opacos. Violeta elétrico em degradê como destaque. */
 
-/* Somente tema escuro. Laranja clássico do iOS (systemOrange) como destaque,
-   com brilho laranja difuso ao fundo para o vidro ter o que desfocar. */
 :root{
-  --bg:#000000; --surface:rgba(28,28,30,.86); --surface-2:#2C2C2E;
-  --fill:rgba(120,120,128,.24);
-  --line:rgba(84,84,88,.6); --line-strong:rgba(84,84,88,.8);
-  --text:#FFFFFF; --muted:rgba(235,235,245,.6); --faint:rgba(235,235,245,.3);
-  --accent:#FF9F0A; --accent-hover:#FFB340; --accent-ink:#1A0E00; --accent-soft:rgba(255,159,10,.18);
-  --glow:rgba(255,140,0,.55);
-  --good:#30D158; --good-mark:#30D158;
-  --bad:#FF453A; --bad-mark:#FF453A; --bad-soft:rgba(255,69,58,.16);
-  --warn:#FFD60A; --warn-mark:#FFD60A; --warn-soft:rgba(255,214,10,.13);
-  --info:#7D7AFF; --info-soft:rgba(94,92,230,.22);
-  --bank:#64D2FF; --bank-mark:#64D2FF; --bank-soft:rgba(100,210,255,.15);
-  --glass:rgba(30,30,32,.52);
-  --glass-strong:rgba(40,40,44,.74);
-  --glass-edge:rgba(255,255,255,.14);
-  --glass-shine:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(255,255,255,.04);
-  --glass-shadow:0 10px 30px rgba(0,0,0,.55);
-  --blur:blur(24px) saturate(190%);
-  --radius:22px; --radius-sm:12px; --radius-xs:9px;
-  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --display:ui-rounded,"SF Pro Rounded",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  --tab-h:62px; --side-w:248px;
+  --bg:#0B0B12; --surface:#15151F; --surface-2:#1C1C28; --fill:#22222F; --fill-hover:#2A2A39;
+  --line:rgba(160,160,220,.10); --line-strong:rgba(160,160,220,.20);
+  --text:#F3F3F8; --muted:#8C8CA6; --faint:#4A4A60;
+  --accent:#8B6CFF; --accent-hover:#9D82FF; --accent-ink:#FFFFFF; --accent-soft:rgba(139,108,255,.16);
+  --accent-2:#22C7FF;
+  --grad:linear-gradient(120deg,#7A5CFF,#A27BFF);
+  --grad-hover:linear-gradient(120deg,#8A6EFF,#B08DFF);
+  --grad-brand:linear-gradient(140deg,#7A5CFF,#22C7FF);
+  --glow:rgba(122,92,255,.38);
+  --good:#2FD39A; --good-mark:#2FD39A; --good-soft:rgba(47,211,154,.14);
+  --bad:#FF5C86; --bad-mark:#FF5C86; --bad-soft:rgba(255,92,134,.14);
+  --warn:#FFC44D; --warn-mark:#FFC44D; --warn-soft:rgba(255,196,77,.12);
+  --info:#8B6CFF; --info-soft:rgba(139,108,255,.18);
+  --bank:#4DB8FF; --bank-mark:#4DB8FF; --bank-soft:rgba(77,184,255,.14);
+  --glass:rgba(17,17,26,.72); --glass-strong:rgba(21,21,31,.92); --glass-edge:rgba(255,255,255,.08);
+  --glass-shine:inset 0 1px 0 rgba(255,255,255,.06); --glass-shadow:0 14px 40px rgba(0,0,0,.5);
+  --blur:blur(16px) saturate(150%);
+  --card-shadow:0 10px 30px rgba(0,0,0,.25);
+  --radius:26px; --radius-sm:16px; --radius-xs:10px;
+  --font:"Segoe UI Variable Text","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --display:"Segoe UI Variable Display","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,sans-serif;
+  --tab-h:62px; --side-w:248px; --dock-h:68px;
   color-scheme:dark;
 }
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  :root{--glass:#1C1C1E;--glass-strong:#2C2C2E;--surface:#1C1C1E}
+  :root{--glass:#15151F;--glass-strong:#1C1C28}
 }
 @media (prefers-reduced-transparency:reduce){
-  :root{--glass:#1C1C1E;--glass-strong:#2C2C2E;--surface:#1C1C1E;--blur:none}
+  :root{--glass:#15151F;--glass-strong:#1C1C28;--blur:none}
 }
 
-/* Luz neon de fundo: fixa, atrás de tudo, sem custo de rolagem */
+/* Brilho de fundo: fixo, atrás de tudo, sem custo de rolagem */
 body::before{content:"";position:fixed;inset:-20vmax;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(38vmax 30vmax at 82% 8%,rgba(255,149,0,.42),transparent 68%),
-    radial-gradient(34vmax 28vmax at 6% 62%,rgba(255,94,0,.28),transparent 68%),
-    radial-gradient(30vmax 24vmax at 70% 100%,rgba(255,170,40,.22),transparent 68%);
-  filter:blur(18px)}
+    radial-gradient(42vmax 32vmax at 100% -4%,rgba(122,92,255,.22),transparent 70%),
+    radial-gradient(34vmax 28vmax at -6% 46%,rgba(34,199,255,.08),transparent 70%);
+  transform:translateZ(0)}
 @media (prefers-reduced-transparency:reduce){body::before{opacity:.35}}
 
 /* Base */
@@ -81,7 +79,7 @@ button{cursor:pointer;-webkit-user-select:none;user-select:none}
 .topbar-context{flex:1;margin:0;font-size:13px;font-weight:500;color:var(--muted);text-transform:capitalize;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand-button{display:flex;align-items:center;gap:10px;background:none;border:0;padding:0}
 .tf-mark{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;
-  background:linear-gradient(160deg,#FFB340,#FF7A00);color:var(--accent-ink);font:700 14px var(--display);
+  background:var(--grad-brand);color:#fff;font:700 14px var(--display);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 0 16px var(--glow)}
 .tf-brand-copy{font-weight:600;font-size:17px}
 .avatar{width:32px;height:32px;border-radius:50%;border:0;background:var(--fill);
@@ -135,8 +133,7 @@ button{cursor:pointer;-webkit-user-select:none;user-select:none}
 .sync-pill.warn,.sync-pill.danger{color:var(--warn)!important}
 
 /* Inset grouped cards */
-.card{background:var(--surface);border-radius:var(--radius);padding:16px 18px;border:.5px solid rgba(255,255,255,.06);
-  -webkit-backdrop-filter:blur(30px) saturate(160%);backdrop-filter:blur(30px) saturate(160%)}
+.card{background:var(--surface);border-radius:var(--radius);padding:16px 18px;border:.5px solid rgba(255,255,255,.06)}
 .card>h2{font-size:20px;margin-bottom:4px}
 .card>.section-title{font-size:13px;font-weight:400;margin-bottom:6px}
 .card>h2+.muted,.card>h3+.muted{margin-bottom:12px}
@@ -173,7 +170,7 @@ button:disabled,.cta:disabled{opacity:.4;cursor:default;box-shadow:none}
 .segmented{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:0;padding:2px;
   border-radius:10px;background:var(--fill)}
 .segmented button{border:0;background:none;padding:6px 18px;border-radius:8px;font-size:14px;font-weight:500;color:var(--text)}
-.segmented button.active{background:#636366;font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+.segmented button.active{background:var(--text);color:var(--bg);font-weight:600;box-shadow:0 3px 10px rgba(0,0,0,.25)}
 
 /* Forms */
 label{display:block;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;margin:18px 2px 7px}
@@ -211,7 +208,7 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 .tf-now-caption{font-size:15px;color:var(--muted)}
 .tf-bigclock{font:600 68px/1 var(--display);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .tf-progress-bar{height:8px;border-radius:99px;background:var(--fill);overflow:hidden}
-.tf-progress-bar span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#FF7A00,var(--accent));box-shadow:0 0 12px var(--glow);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.tf-progress-bar span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#7A5CFF,var(--accent-2));box-shadow:none;transition:width .5s cubic-bezier(.2,.8,.2,1)}
 .tf-progress-overtime .tf-progress-bar span{background:var(--good-mark)}
 .tf-progress-meta{display:flex;justify-content:space-between;margin-top:7px;font-size:15px;color:var(--muted)}
 .tf-progress-meta b{font-weight:600;color:var(--text)}
@@ -234,10 +231,12 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 .tf-timeline-step.current .tf-timeline-time{color:var(--accent);font-size:15px}
 .tf-metric-ribbon{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .tf-metric-ribbon.four{grid-template-columns:repeat(2,1fr)}
+/* v2.2.0: no celular, o terceiro indicador ocupa a linha toda em vez de ficar sozinho pela metade */
+@media (max-width:519px){.tf-metric-ribbon:not(.four){grid-template-columns:repeat(2,1fr)}
+  .tf-metric-ribbon:not(.four)>.tf-metric:last-child:nth-child(odd){grid-column:1/-1}}
 @media (min-width:760px){.tf-metric-ribbon.four{grid-template-columns:repeat(4,1fr)}}
 .tf-metric,.kpi-mini,.metric{display:flex;flex-direction:column;gap:2px;padding:14px 16px;background:var(--surface);
-  border-radius:var(--radius);min-width:0;border:.5px solid rgba(255,255,255,.06);
-  -webkit-backdrop-filter:blur(30px) saturate(160%);backdrop-filter:blur(30px) saturate(160%)}
+  border-radius:var(--radius);min-width:0;border:.5px solid rgba(255,255,255,.06)}
 .tf-metric strong,.kpi-mini strong,.metric b{font:600 26px/1.15 var(--display);letter-spacing:-.02em}
 .tf-metric small{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kpi-strip{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:10px}
@@ -340,7 +339,7 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 .login-wrap{min-height:75dvh;display:grid;place-items:center}
 .login-wrap .card{max-width:400px;padding:32px 26px}
 .login-logo{width:64px;height:64px;margin:0 auto 16px;border-radius:16px;display:grid;place-items:center;
-  background:linear-gradient(160deg,#FFB340,#FF7A00);color:var(--accent-ink);font:700 26px var(--display);
+  background:var(--grad-brand);color:#fff;font:700 26px var(--display);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 8px 32px var(--glow)}
 .login-wrap h2{font-size:28px;margin-bottom:6px}
 .models{display:grid;gap:10px;margin-top:14px}
@@ -378,33 +377,19 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 /* Palco do relógio: sem cartão, dígitos finos direto sobre o preto */
 .tf-stage{background:none!important;border:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;padding:8px 4px 4px}
 .tf-stage-top .label{font-weight:500;color:var(--muted)}
-.tf-bigclock{font:200 92px/1 var(--font);letter-spacing:-.04em;text-align:center;margin:6px 0 4px;
-  text-shadow:0 0 40px rgba(255,159,10,.18)}
+.tf-bigclock{font:200 92px/1 var(--font);letter-spacing:-.04em;text-align:center;margin:6px 0 4px}
 .tf-progress-meta{font-size:15px}
-/* Botões redondos com anel duplo, como no cronômetro */
-.tf-stage-action{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin-top:8px}
-.round-btn{width:84px;height:84px;border-radius:50%;border:0;display:grid;place-items:center;padding:0;
-  font:500 16px var(--font);letter-spacing:-.01em;min-height:0;
-  box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px currentColor;transition:transform .12s,filter .2s}
-.round-btn:active{transform:scale(.94);filter:brightness(1.25)}
-.round-gray{background:#333336;color:#FFFFFF;box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px #333336}
-.round-orange{background:var(--accent);color:var(--accent-ink);
-  box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px var(--accent),0 8px 30px var(--glow)}
-.round-orange:hover{background:var(--accent-hover)}
-.round-btn:disabled{opacity:.35;box-shadow:0 0 0 2.5px var(--bg),0 0 0 4.5px #333336}
-.round-orange:disabled{background:#333336;color:var(--muted)}
-.round-caption{text-align:center;font-size:15px;color:var(--muted);line-height:1.3}
 /* Lista de marcações como as voltas do cronômetro */
 .tf-timeline-panel{background:none!important;border:0!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;padding:0 4px}
 .tf-timeline-step{border-bottom:.5px solid var(--line);min-height:46px}
 .tf-timeline-step:first-child{border-top:.5px solid var(--line)}
 .tf-timeline-time{font-size:17px;font-variant-numeric:tabular-nums}
 /* Teclas da calculadora: cinza-escuro com texto branco */
-.secondary{background:#333336;color:#FFFFFF}
-.secondary:hover{background:#3F3F43}
-.segmented{background:#1C1C1E}
-.icon-btn{background:#333336;color:#FFFFFF}
-.tf-reg-leave-actions .secondary{background:#333336}
+.secondary{background:var(--fill);color:var(--text)}
+.secondary:hover{background:var(--fill-hover)}
+.segmented{background:var(--fill)}
+.icon-btn{background:var(--fill);color:var(--text)}
+.tf-reg-leave-actions .secondary{background:var(--fill)}
 .tf-metric strong,.kpi-mini strong,.metric b{font-family:var(--font);font-weight:300;font-size:30px;letter-spacing:-.03em}
 @media (min-width:760px){
   .tf-bigclock{font-size:120px;text-align:left}
@@ -413,3 +398,134 @@ input[type=date]::-webkit-date-and-time-value,input[type=time]::-webkit-date-and
 @media (max-width:420px){.tf-bigclock{font-size:84px}}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* v2.2.0: tela de abertura enquanto o app carrega (some no primeiro render) */
+.boot-splash{min-height:60dvh;display:grid;place-items:center;align-content:center;gap:18px}
+.boot-splash .tf-mark{width:56px;height:56px;border-radius:16px;font-size:24px}
+.boot-dots{display:flex;gap:6px}
+.boot-dots i{width:7px;height:7px;border-radius:50%;background:var(--accent);opacity:.25;animation:bootDot 1s infinite ease-in-out}
+.boot-dots i:nth-child(2){animation-delay:.15s}.boot-dots i:nth-child(3){animation-delay:.3s}
+@keyframes bootDot{50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.boot-dots i{animation:none;opacity:.6}}
+
+/* ============================================================
+   v2.2.0 · TEMA MODERNO ESCURO — componentes
+   (os tokens ficam no :root do topo do arquivo; ver DESIGN.md)
+   ============================================================ */
+.card,.tf-metric,.kpi-mini,.metric{background:var(--surface);border:1px solid var(--line);box-shadow:var(--card-shadow)}
+.tf-mark{background:var(--grad-brand);color:#fff;box-shadow:0 6px 18px var(--glow);border-radius:10px}
+.page-head h2{font-weight:750;letter-spacing:-.035em}
+.sync-pill{background:var(--surface);border:1px solid var(--line);box-shadow:none}
+
+/* Palco do relógio vira um card */
+.tf-stage{background:var(--surface)!important;border:1px solid var(--line)!important;border-radius:var(--radius);padding:20px 20px 18px!important}
+.tf-bigclock{font:700 84px/1 var(--display);letter-spacing:-.05em;text-align:left;margin:4px 0 10px;
+  background:linear-gradient(120deg,#FFFFFF 35%,#B9A6FF);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+.tf-progress-bar{height:10px;background:var(--fill)}
+.tf-progress-bar span{background:linear-gradient(90deg,#7A5CFF,#22C7FF);box-shadow:none}
+.tf-stage-status{margin:12px 0 0;font-size:15px;color:var(--muted)}
+
+/* Marcações */
+.tf-timeline-panel{background:var(--surface)!important;border:1px solid var(--line)!important;border-radius:var(--radius);padding:6px 18px!important}
+.tf-timeline-panel .tf-panel-heading{padding-top:10px}
+.tf-timeline-step:first-child{border-top:0}
+.tf-timeline-step.current .tf-timeline-dot{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+
+/* Indicadores: o primeiro em destaque */
+.tf-metric-ribbon .tf-metric:first-child{background:var(--grad);border-color:transparent;box-shadow:0 12px 30px var(--glow)}
+.tf-metric-ribbon .tf-metric:first-child :is(span,small,strong){color:#fff!important}
+.tf-metric strong,.kpi-mini strong,.metric b{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:-.035em}
+
+/* Botões em pílula */
+.primary,.secondary,.cta,.google,.model-btn{border-radius:999px}
+.primary,.cta{background:var(--grad);color:#fff;box-shadow:0 10px 24px var(--glow)}
+.primary:hover,.cta:hover{background:var(--grad-hover)}
+.secondary,.icon-btn{background:var(--fill);color:var(--text)}
+.secondary:hover{background:var(--fill-hover)}
+.segmented{background:var(--fill);border-radius:999px}
+.segmented button{border-radius:999px}
+.segmented button.active{background:var(--text);color:var(--bg)}
+.input,select,textarea{border-radius:var(--radius-sm);background:var(--fill);border-color:transparent}
+
+/* Barra de abas: pílula escura, aba ativa clara */
+.bottom-nav{background:var(--glass);border:1px solid var(--glass-edge)}
+.bottom-nav button{color:var(--muted)}
+.bottom-nav button.active{background:#F3F3F8;color:#0B0B12;text-shadow:none}
+@media (min-width:900px){
+  .side-panel .bottom-nav button.active{background:var(--grad);color:#fff;box-shadow:0 6px 18px var(--glow)}
+  .side-panel .bottom-nav button.active .nav-icon,.side-panel .bottom-nav button .nav-icon{color:inherit}
+}
+
+/* ——— Novo arranjo dos botões da tela Hoje ———
+   Celular: o botão de bater ponto fica fixo logo acima das abas, na área do polegar,
+   sempre visível sem rolar. Botão grande = próxima marcação + hora atual.
+   "Corrigir" vira um botão pequeno ao lado, para não ser tocado sem querer. */
+.tf-action-dock{display:grid;grid-template-columns:auto 1fr;gap:10px;margin-top:16px}
+.dock-undo{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  width:68px;height:var(--dock-h);border:0;border-radius:22px;background:var(--fill);color:var(--muted);font-size:11px;font-weight:600}
+.dock-undo svg{width:22px;height:22px}
+.dock-undo:not(:disabled):active{transform:scale(.96)}
+.dock-undo:disabled{opacity:.35}
+.dock-main{display:flex;align-items:center;justify-content:space-between;gap:12px;height:var(--dock-h);padding:0 22px;
+  border:0;border-radius:22px;background:var(--grad);color:#fff;box-shadow:0 12px 30px var(--glow);text-align:left;transition:transform .12s,filter .2s}
+.dock-main:active{transform:scale(.98);filter:brightness(1.1)}
+.dock-main:disabled{background:var(--fill);color:var(--muted);box-shadow:none}
+.dock-main-copy{display:flex;flex-direction:column;line-height:1.1}
+.dock-main-copy small{font-size:12px;font-weight:600;opacity:.8;text-transform:uppercase;letter-spacing:.06em}
+.dock-main-copy strong{font:700 22px var(--display);letter-spacing:-.02em}
+.dock-main-time{font:600 20px var(--display);font-variant-numeric:tabular-nums;padding:6px 12px;border-radius:12px;background:rgba(255,255,255,.16)}
+@media (max-width:899px){
+  .tf-action-dock{position:fixed;z-index:29;left:50%;transform:translateX(-50%);
+    bottom:calc(var(--tab-h) + 20px + env(safe-area-inset-bottom));width:min(calc(100% - 28px),420px);margin:0}
+  .tf-screen[data-view="home"]{padding-bottom:calc(var(--tab-h) + var(--dock-h) + 56px + env(safe-area-inset-bottom))}
+}
+@media (max-width:420px){.tf-bigclock{font-size:76px}}
+@media (min-width:760px){.tf-bigclock{font-size:112px}}
+@media (max-width:899px){
+  .tf-screen[data-view="home"]::after{content:"";position:fixed;left:0;right:0;bottom:0;z-index:28;pointer-events:none;
+    height:calc(var(--tab-h) + var(--dock-h) + 64px + env(safe-area-inset-bottom));
+    background:linear-gradient(to bottom,rgba(11,11,18,0),var(--bg) 42%)}
+}
+
+/* v2.2.0: aviso com botão Desfazer */
+.toast.has-action{display:flex;align-items:center;gap:12px}
+.toast-text{flex:1}
+.toast-action{border:0;border-radius:999px;padding:7px 14px;background:var(--accent-soft);color:var(--accent-hover);font:600 14px var(--font);white-space:nowrap}
+.toast-action:active{transform:scale(.96)}
+/* v2.2.0: card do dia com a jornada aberta */
+.tf-metric-live strong{font-variant-numeric:tabular-nums}
+/* v2.2.0: com a jornada completa, a barra fica sólida e discreta (sem transparência sobre o conteúdo) */
+.dock-main:disabled{background:var(--surface-2);color:var(--muted);opacity:1;border:1px solid var(--line)}
+.dock-main:disabled .dock-main-time{background:var(--fill)}
+.dock-undo{border:1px solid var(--line)}
+.dock-undo:disabled{opacity:1;color:var(--faint)}
+
+/* ——— v2.2.0 · repaginada final: Registrar, Mês, Ajustes, login ——— */
+/* Mini indicadores dentro de um card: sem "card dentro de card" */
+.card .kpi-mini,.card .metric,.kpi-strip .kpi-mini,.kpi-strip .metric{background:var(--fill);border:0;box-shadow:none;border-radius:var(--radius-sm)}
+.kpi-strip .kpi-mini strong{font-size:18px;font-weight:650;letter-spacing:-.02em}
+/* Justificar o dia: três botões numa linha, sem quebrar texto */
+.tf-reg-leave-actions .secondary{white-space:nowrap;font-size:14px;padding:0 6px;border:1px solid var(--line)}
+/* Ações que apagam dados: sempre em vermelho, nunca com cara de botão comum */
+#reset,#deleteCloud,.secondary.danger,.danger-text.secondary{background:var(--bad-soft)!important;color:var(--bad)!important;border:1px solid rgba(255,92,134,.25)}
+/* Avisos "Conferir" do mês */
+.tf-issues{background:linear-gradient(var(--warn-soft),var(--warn-soft)),var(--surface);border-color:rgba(255,196,77,.22)}
+.tf-issues .section-title{color:var(--warn)}
+/* Gavetas */
+.drawer-icon{background:var(--fill);color:var(--text)}
+/* Títulos de seção dentro dos cards */
+.card>.section-title,.card .section-title{letter-spacing:.06em;font-size:12px}
+/* Login */
+.login-logo{box-shadow:0 10px 32px var(--glow);border-radius:18px}
+.google{background:var(--text);color:var(--bg);border:0}
+
+/* v2.2.0: conferência de vários comprovantes */
+.receipt-list{list-style:none;margin:12px 0;padding:0;display:grid;gap:8px}
+.receipt-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:var(--radius-sm);background:var(--fill)}
+.receipt-row div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.receipt-row small{color:var(--muted);font-size:13px}
+.receipt-tag{flex:none;font-size:12px;font-weight:650;padding:4px 10px;border-radius:999px;background:var(--surface-2)}
+.receipt-tag.ok{color:var(--good)!important;background:var(--good-soft)}
+.receipt-tag.warn{color:var(--warn)!important;background:var(--warn-soft)}
+.receipt-tag.info{color:var(--accent-hover);background:var(--accent-soft)}
+.receipt-tag.danger{color:var(--bad)!important;background:var(--bad-soft)}
