@@ -108,3 +108,19 @@ DATA: 09/11/2026 HORA:
   const r=api.parseReceiptsText(iphone+'\n'+iphone.replace('69975','69990').replace('09/11/2026','10/11/2026').replace('19:23','08:01'));
   assert.deepEqual(plain(r),[{date:'2026-11-09',time:'19:23',nsr:'69975'},{date:'2026-11-10',time:'08:01',nsr:'69990'}]);
 });
+
+test('saída depois da meia-noite confere com o dia anterior e não vira entrada do dia seguinte',()=>{
+  const api=boot();
+  api.state.days['2026-11-09']={date:'2026-11-09',punches:[{id:'a',time:'15:00',source:'button'},{id:'b',time:'00:31',source:'button'}]};
+  const c=api.compareReceiptsWithApp(api.parseReceiptsText([receipt('1','09/11/2026','15:00'),receipt('2','10/11/2026','00:30')].join('\n')));
+  assert.deepEqual(plain(c.map(x=>[x.target,x.status])),[['2026-11-09','match'],['2026-11-09','diff']]);
+  assert.equal(api.applyMissingReceipts(c),0);
+  assert.equal(api.state.days['2026-11-10'],undefined);
+});
+
+test('madrugada sem batida parecida no dia anterior continua como entrada do dia',()=>{
+  const api=boot();
+  api.state.days['2026-11-09']={date:'2026-11-09',punches:[{id:'a',time:'08:00'},{id:'b',time:'17:00'}]};
+  const c=api.compareReceiptsWithApp(api.parseReceiptsText(receipt('1','10/11/2026','05:00')));
+  assert.deepEqual(plain(c.map(x=>[x.target,x.status])),[['2026-11-10','missing']]);
+});
