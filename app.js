@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v2.3.1';
+const APP_VERSION = 'v2.3.2';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -477,17 +477,32 @@ function compareReceiptsWithApp(receipts){
   const out = [];
   try{
     state.days = sim;
-    for(const r of receipts){
-      const target = targetDateForImportedPunch(r.date, r.time);
-      const d = sim[target] || {date:target, punches:[]};
-      const punches = punchesOf(d);
-      const rMin = parseHM(r.time);
-      let nearest = null;
-      for(const p of punches){
+    const nearestIn = (dayObj, rMin) => {
+      let best = null;
+      for(const p of punchesOf(dayObj)){
         let diff = parseHM(p.time) - rMin;
         if(diff > 720) diff -= 1440; if(diff < -720) diff += 1440;
-        if(nearest === null || Math.abs(diff) < Math.abs(nearest.diff)) nearest = {time:p.time, diff};
+        if(best === null || Math.abs(diff) < Math.abs(best.diff)) best = {time:p.time, diff};
       }
+      return best;
+    };
+    for(const r of receipts){
+      let target = targetDateForImportedPunch(r.date, r.time);
+      const rMin = parseHM(r.time);
+      // v2.3.2: saída depois da meia-noite. O comprovante vem com a data do dia seguinte,
+      // mas a batida já está no dia anterior (jornada fechada). Confere com ela em vez de
+      // virar a entrada do dia seguinte.
+      if(target === r.date && rMin !== null && rMin < 360){
+        const prev = dateObj(r.date); prev.setDate(prev.getDate()-1);
+        const prevId = iso(prev);
+        const prevNearest = sim[prevId] ? nearestIn(sim[prevId], rMin) : null;
+        const hereNearest = sim[target] ? nearestIn(sim[target], rMin) : null;
+        if(prevNearest && Math.abs(prevNearest.diff) <= RECEIPT_TOLERANCE_MIN
+          && (!hereNearest || Math.abs(prevNearest.diff) < Math.abs(hereNearest.diff))) target = prevId;
+      }
+      const d = sim[target] || {date:target, punches:[]};
+      const punches = punchesOf(d);
+      const nearest = nearestIn(d, rMin);
       let status;
       if(d.absenceType) status = 'blocked';
       else if(nearest && nearest.diff === 0) status = 'match';
@@ -883,6 +898,14 @@ function monthStats(year, month){
       : `${brDate(id)}: ${count?'batidas incompletas':'dia sem registro (não descontado do banco)'}`);
     if(obj.absenceType&&dayOfficialImpact(obj))issues.push(`${brDate(id)}: ausência manual com valores oficiais diários; confira a divergência`);
     if(dup) issues.push(`${brDate(id)}: marcação duplicada`);
+    // v2.3.2: a saída depois da meia-noite repetida como entrada do dia seguinte.
+    if(punches.length && parseHM(punches[0].time) < 360){
+      const prevDate = new Date(d); prevDate.setDate(prevDate.getDate()-1);
+      const prevPunches = punchesOf(state.days[iso(prevDate)] || {punches:[]});
+      const prevLast = prevPunches[prevPunches.length-1];
+      if(prevLast && Math.abs(parseHM(prevLast.time) - parseHM(punches[0].time)) <= RECEIPT_TOLERANCE_MIN)
+        issues.push(`${brDate(id)}: a batida das ${punches[0].time} parece ser a saída de ${brDate(iso(prevDate))} repetida. Apague-a em Registrar.`);
+    }
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
     const displayImpact = isPastOrToday ? impact : { debit:0, credit:0, saldo:0, source:'future' };
     const displayStatus = isPastOrToday ? status : { text:'Futuro', cls:'gray' };
