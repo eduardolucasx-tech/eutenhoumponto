@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'euTenhoUmPontoV2Preview';
-const APP_VERSION = 'v2.3.2';
+const APP_VERSION = 'v2.3.3';
 const PREVIEW_UID = '__local_preview_v161__';
 let previewMode = new URLSearchParams(window.location.search).get('demo') === '1' || window.location.protocol === 'file:';
 function previewUser(){return {uid:PREVIEW_UID,name:'Demonstração',email:'prévia local',photoURL:'',provider:'local_preview'};}
@@ -905,6 +905,13 @@ function monthStats(year, month){
       const prevLast = prevPunches[prevPunches.length-1];
       if(prevLast && Math.abs(parseHM(prevLast.time) - parseHM(punches[0].time)) <= RECEIPT_TOLERANCE_MIN)
         issues.push(`${brDate(id)}: a batida das ${punches[0].time} parece ser a saída de ${brDate(iso(prevDate))} repetida. Apague-a em Registrar.`);
+    }
+    // v2.3.3: o dia com as mesmas batidas do anterior (jornada que passa da meia-noite) foi copiado por engano.
+    if(punches.length>=2 && parseHM(punches[punches.length-1].time) < parseHM(punches[0].time)){
+      const prevDate = new Date(d); prevDate.setDate(prevDate.getDate()-1);
+      const prevPunches = punchesOf(state.days[iso(prevDate)] || {punches:[]});
+      if(prevPunches.map(p=>p.time).join(',') === punches.map(p=>p.time).join(','))
+        issues.push(`${brDate(id)}: tem as mesmas batidas de ${brDate(iso(prevDate))}. Se não trabalhou nesse horário, corrija em Registrar.`);
     }
     if(isHoliday(id,state.profile.city) && punches.length) issues.push(`${brDate(id)}: feriado com marcação registrada`);
     const displayImpact = isPastOrToday ? impact : { debit:0, credit:0, saldo:0, source:'future' };
@@ -1858,8 +1865,10 @@ function renderRegister(){
     const dateEl=document.getElementById('regDate');
     const fieldEl=document.getElementById('regFields');
     const noteEl=document.getElementById('note');
+    let drawnFor=activeDate;
     const draw=()=>{
       const selected=dateEl.value||activeDate;
+      drawnFor=selected;
       const record=state.days[selected]||{date:selected,punches:[],note:''};
       const items=manualFields.map((name,i)=>{
         const kind=i===0?'entry':i===manualFields.length-1?'exit':i===1?'break':'return';
@@ -1871,6 +1880,12 @@ function renderRegister(){
       fieldEl.innerHTML=items.join('');
       noteEl.value=record.note||'';
     };
+    // v2.3.3: no iPhone o "change" da data pode vir depois do toque em Salvar; o "input" troca as batidas na hora.
+    dateEl.oninput=()=>{
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dateEl.value))return;
+      selectedRegisterDate=dateEl.value;
+      draw();
+    };
     dateEl.onchange=()=>{
       if(!/^\d{4}-\d{2}-\d{2}$/.test(dateEl.value))return;
       selectedRegisterDate=dateEl.value;
@@ -1880,6 +1895,12 @@ function renderRegister(){
     document.getElementById('saveReg').onclick=()=>{
       const selected=dateEl.value;
       if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){showToast('Escolha uma data válida.','warn');return;}
+      if(selected!==drawnFor){
+        selectedRegisterDate=selected;
+        renderRegister();
+        showToast('A data mudou para '+brDate(selected)+'. Confira as batidas e toque em Salvar de novo.','warn');
+        return;
+      }
       const original=state.days[selected]||{date:selected,punches:[],note:''};
       if(original.absenceType&&!confirm('Substituir '+absenceLabel(original.absenceType)+' por batidas manuais? A ocorrência deixará de contar no saldo.'))return;
       const values=[...document.querySelectorAll('.punchInput')].map(input=>input.value).filter(Boolean);
@@ -2255,7 +2276,8 @@ function renderMonth(){
       +'<span class="tf-day-mark" aria-hidden="true"></span></button>';
   }).join('');
   const emptyMonth=!st.rows.some(r=>r.done||r.provisionalSaturday||(r.punches||[]).length);
-  const issues = st.issues.length ? `<ul class="issues">${st.issues.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
+  const issueList = [...st.issues].sort((a,b)=>/Registrar/.test(b)-/Registrar/.test(a));
+  const issues = st.issues.length ? `<ul class="issues">${issueList.slice(0,6).map(i=>`<li>${i}</li>`).join('')}${st.issues.length>6?`<li>Mais ${st.issues.length-6} item(ns) no relatório.</li>`:''}</ul>` : '<p class="muted">Nenhuma inconsistência encontrada.</p>';
   const shift=delta=>{const d=new Date(year,month+delta,1);selectedMonthValue=`${d.getFullYear()}-${pad(d.getMonth()+1)}`;renderMonth();};
   const monthTitle=monthNames[month].charAt(0).toUpperCase()+monthNames[month].slice(1)+' '+year;
   screenEl.innerHTML = `
